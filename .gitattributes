@@ -1,0 +1,13 @@
+# 行尾统一为 LF —— 仓库的价值全在 diff 干净上，
+# CRLF/LF 混用会制造纯噪声，淹没「这道题上次改了什么」
+* text=auto eol=lf
+
+# 图片按二进制处理，禁止 diff / 换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+
+# Windows 快捷方式与二进制
+*.lnk binary

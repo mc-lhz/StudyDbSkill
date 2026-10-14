@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# ⚠️ 真实错题数据绝不入工具仓（数据仓在仓外，这里是兜底防线）
+# 仓内 examples/ 是虚构夹具，必须提交
+/data/
+
+# 发布产物
+dist/
+*.zip
+
+# 临时草稿
+*.tmp
+*.bak
+_scratch/
