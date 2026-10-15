@@ -4,141 +4,45 @@ from werkzeug.utils import secure_filename
 import os
 import socket
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.expanduser(r"~/Documents/bio-error-data/data/inbox")
-TLS = os.path.join(HERE, "_tls")
 
 app = Flask(__name__)
 # 这行不能省：不设的话一次上传能把磁盘写满
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
+# 不加 capture 属性：手机上点开是菜单（拍照 / 照片图库 / 浏览），两种都行。
+# 加了 capture="environment" 后 Android 会强制只开相机，拍完想选图库里的就不行了。
 PAGE = """<!doctype html><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>拍卷子</title>
 <style>
-body{margin:0;font:16px system-ui;background:#111;color:#eee;
-     display:flex;flex-direction:column;height:100vh}
-#v{width:100%;flex:1;object-fit:contain;background:#000}
-#pad{padding:10px 12px calc(12px + env(safe-area-inset-bottom));display:flex;gap:10px}
-button{flex:1;padding:16px;font-size:18px;border:0;border-radius:10px;
-       background:#2b6cff;color:#fff}
-button:disabled{background:#334}
-#file{width:100%;padding:12px;box-sizing:border-box}
-#msg{padding:10px 12px;background:#1a1a1a;font-size:14px;color:#9cf;min-height:38px}
+body{margin:0;padding:14px;font:16px system-ui;background:#111;color:#ddd;
+     -webkit-text-size-adjust:100%;text-size-adjust:100%}
+#msg{padding:7px 9px;background:#1a1a1a;border-radius:7px;color:#9cf;
+     font-size:13px;word-break:break-all;margin-bottom:10px;min-height:32px}
+/* iOS Safari：input/select/textarea 字号 <16px 时，聚焦会把整页放大。
+   布局可以紧凑，但这个必须 16px，否则用户每次点它页面都跳一下。 */
+#file{font-size:16px;padding:7px;border-radius:7px;background:#222;color:#eee;
+      border:1px solid #444;width:100%;box-sizing:border-box}
+button{margin-top:8px;padding:8px 12px;font-size:16px;border:0;
+       border-radius:7px;background:#2b6cff;color:#fff}
 </style>
-<div id=msg>点「开启相机」——需允许摄像头权限</div>
-<video id=v autoplay playsinline muted></video>
-<div id=pad>
-  <button id=cam>开启相机</button>
-  <button id=shot disabled>拍照</button>
-</div>
-<input id=file type=file accept=image/* capture=environment style="display:none">
+<div id=msg>选一张或多张上传</div>
+<input id=file type=file accept=image/* multiple onchange="up(this)">
+<button onclick="location.reload()">再传一批</button>
 <script>
-const v=document.getElementById('v'),msg=document.getElementById('msg');
-const cam=document.getElementById('cam'),shot=document.getElementById('shot');
-let stream=null;
-const say=t=>msg.textContent=t;
-
-// 相机不可用时（无安全上下文 / 拒绝授权 / 没摄像头）自动露出相册兜底
-const fallback=t=>{say(t);document.getElementById('file').style.display='block'};
-
-cam.onclick=async()=>{
-  try{
-    stream=await navigator.mediaDevices.getUserMedia(
-      {video:{facingMode:{ideal:'environment'}}});
-    v.srcObject=stream;shot.disabled=false;cam.textContent='相机已开';
-    say('对准卷子，点「拍照」');
-  }catch(e){fallback('相机不可用（'+e.name+'），改用下面相册上传')}
-};
-
-shot.onclick=()=>{
-  if(!stream||!v.videoWidth)return;
-  const c=document.createElement('canvas');
-  c.width=v.videoWidth;c.height=v.videoHeight;
-  c.getContext('2d').drawImage(v,0,0);
-  c.toBlob(b=>send(b,'image/jpeg'),'image/jpeg',0.9);
-  say('上传中…');
-};
-
-document.getElementById('file').onchange=function(){
-  if(this.files[0]){send(this.files[0],this.files[0].name);say('上传中…')}
-};
-
-async function send(blob,name){
-  const fd=new FormData();fd.append('photo',blob,name||'photo.jpg');
+async function up(el){
+  const fs=[...el.files]; if(!fs.length) return;
+  const m=document.getElementById('msg');
+  m.textContent='上传中… '+fs.length+' 张';
+  const fd=new FormData();
+  for(const f of fs) fd.append('photo',f,f.name);
   try{
     const r=await fetch('/upload',{method:'POST',body:fd});
-    say(await r.text());
-  }catch(e){say('上传失败：'+e.message)}
+    m.textContent=await r.text();
+  }catch(e){m.textContent='上传失败：'+e.message}
 }
 </script>"""
-
-
-def lan_ip():
-    """取本机局域网 IP，写进证书 SAN，可以少一层证书警告。"""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    except OSError:
-        return "127.0.0.1"
-    finally:
-        s.close()
-
-
-def ssl_context():
-    """自签证书：生成一次落盘，之后复用。
-
-    每次现生成会让手机每次重连都重新弹证书警告。
-    """
-    cert = os.path.join(TLS, "cert.pem")
-    key = os.path.join(TLS, "key.pem")
-    # 判存在还不够：生成过程中失败会留下 0 字节的半成品，
-    # 那样 ssl.load_cert_chain 报的是看不懂的「PEM lib」错误
-    if all(os.path.exists(p) and os.path.getsize(p) > 0 for p in (cert, key)):
-        return cert, key
-
-    import datetime as dt
-    import ipaddress
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.x509.oid import NameOID
-
-    ip = lan_ip()
-    priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, ip)])
-    now = dt.datetime.now(dt.timezone.utc)
-    cert_obj = (
-        x509.CertificateBuilder()
-        .subject_name(name)
-        .issuer_name(name)
-        .public_key(priv.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - dt.timedelta(days=1))
-        .not_valid_after(now + dt.timedelta(days=3650))
-        .add_extension(
-            x509.SubjectAlternativeName([
-                x509.DNSName("localhost"),
-                x509.IPAddress(ipaddress.ip_address(ip)),
-            ]),
-            critical=False,
-        )
-        .sign(priv, hashes.SHA256())
-    )
-
-    os.makedirs(TLS, exist_ok=True)
-    with open(cert, "wb") as fh:
-        fh.write(cert_obj.public_bytes(serialization.Encoding.PEM))
-    with open(key, "wb") as fh:
-        fh.write(
-            priv.private_bytes(
-                serialization.Encoding.PEM,
-                serialization.PrivateFormat.TraditionalOpenSSL,
-                serialization.NoEncryption(),
-            )
-        )
-    return cert, key
 
 
 @app.get("/")
@@ -148,13 +52,25 @@ def index():
 
 @app.post("/upload")
 def upload():
-    f = request.files["photo"]
-    # secure_filename 不能省：f.filename 是客户端给的，里面能有 ../，
-    # 直接拼路径就是任意写文件
-    name = datetime.now().strftime("%Y%m%d-%H%M%S-") + secure_filename(f.filename)
-    path = os.path.join(OUT, name)
-    f.save(path)
-    return "saved: " + path
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    saved, skipped = [], 0
+    for i, f in enumerate(request.files.getlist("photo"), 1):
+        # 没有 filename 的是空表单字段，不是文件。不静默吞掉，要计数报出来
+        if not f.filename:
+            skipped += 1
+            continue
+        # secure_filename 不能省：f.filename 是客户端给的，里面能有 ../，
+        # 直接拼路径就是任意写文件。
+        # 序号是为了同一次多选里同名文件不互相覆盖
+        name = "%s-%02d-%s" % (stamp, i, secure_filename(f.filename))
+        f.save(os.path.join(OUT, name))
+        saved.append(name)
+    if not saved:
+        return "没有收到文件（收到 %d 个空字段）。浏览器上传正常；curl 传非 ASCII 文件名会失败。" % skipped
+    msg = "saved %d: %s" % (len(saved), ", ".join(saved))
+    if skipped:
+        msg += "（跳过 %d 个空字段）" % skipped
+    return msg
 
 
 if __name__ == "__main__":
@@ -166,6 +82,5 @@ if __name__ == "__main__":
     os.environ.pop("WERKZEUG_RUN_MAIN", None)
     os.environ.pop("WERKZEUG_SERVER_FD", None)
     os.makedirs(OUT, exist_ok=True)
-    ctx = ssl_context()
-    print("camera: https://%s:8080" % lan_ip())
-    app.run(host="0.0.0.0", port=8080, ssl_context=ctx)
+    print("upload: http://%s:8080" % socket.gethostbyname(socket.gethostname()))
+    app.run(host="0.0.0.0", port=8080)
