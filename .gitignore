@@ -18,6 +18,10 @@ Thumbs.db
 # 仓内 examples/ 是虚构夹具，必须提交
 /data/
 
+# 自签证书与私钥，绝不入库
+tools/Capture/_tls/
+*.pem
+
 # 发布产物
 dist/
 *.zip
