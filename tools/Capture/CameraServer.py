@@ -3,12 +3,18 @@ from datetime import datetime
 from werkzeug.utils import secure_filename
 import os
 import socket
+import shutil
 
 OUT = os.path.expanduser(r"~/Documents/bio-error-data/data/inbox")
 
 app = Flask(__name__)
-# 这行不能省：不设的话一次上传能把磁盘写满
-app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
+# 上传大小不设上限（按要求）。
+# 只在「磁盘真的快满了」时拦一下，避免写满盘影响系统和 cpolar；
+# 这不是文件大小限制，想连它一起去掉就删掉 _disk_ok 及其调用。
+app.config["MAX_CONTENT_LENGTH"] = None
+
+# 上传前至少给磁盘留这么多余量
+DISK_RESERVE = 200 * 1024 * 1024
 
 # 不加 capture 属性：手机上点开是菜单（拍照 / 照片图库 / 浏览），两种都行。
 # 加了 capture="environment" 后 Android 会强制只开相机，拍完想选图库里的就不行了。
@@ -31,12 +37,35 @@ button{margin-top:8px;padding:8px 12px;font-size:16px;border:0;
 <input id=file type=file accept=image/* multiple onchange="up(this)">
 <button onclick="location.reload()">再传一批</button>
 <script>
+// 卷子照片不需要 1200 万像素——长边压到 2000px 重编码成 JPEG，
+// 体积通常降到十分之一，多选也不会撞 413
+const MAX=2000;
+
+async function shrink(file){
+  const bmp=await createImageBitmap(file,{imageOrientation:'from-image'});
+  const sc=Math.min(1,MAX/Math.max(bmp.width,bmp.height));
+  const c=document.createElement('canvas');
+  c.width=Math.round(bmp.width*sc); c.height=Math.round(bmp.height*sc);
+  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
+  return blob||file;
+}
+
 async function up(el){
   const fs=[...el.files]; if(!fs.length) return;
   const m=document.getElementById('msg');
-  m.textContent='上传中… '+fs.length+' 张';
+  m.textContent='压缩中… '+fs.length+' 张';
   const fd=new FormData();
-  for(const f of fs) fd.append('photo',f,f.name);
+  let before=0,after=0;
+  for(const f of fs){
+    before+=f.size;
+    let b;
+    try{b=await shrink(f)}catch(e){b=f}   // 压缩不了就传原图
+    after+=b.size;
+    const n=f.name.replace(/\.\w+$/,'')+'.jpg';
+    fd.append('photo',b,n);
+  }
+  m.textContent='上传中… '+Math.round(before/1048576)+'MB → '+Math.round(after/1048576)+'MB';
   try{
     const r=await fetch('/upload',{method:'POST',body:fd});
     m.textContent=await r.text();
@@ -45,16 +74,34 @@ async function up(el){
 </script>"""
 
 
+@app.errorhandler(413)
+def too_large(_):
+    return "上传被拒。", 413
+
+
 @app.get("/")
 def index():
     return PAGE
 
 
+def disk_ok(nbytes):
+    return nbytes <= shutil.disk_usage(OUT).free - DISK_RESERVE
+
+
 @app.post("/upload")
 def upload():
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    items = request.files.getlist("photo")
+
+    incoming = sum(f.content_length or 0 for f in items if f.filename)
+    if incoming and not disk_ok(incoming):
+        return "磁盘空间不足：剩余 %.1f GB，本次需要 %.1f GB。" % (
+            shutil.disk_usage(OUT).free / 2**30,
+            incoming / 2**30,
+        )
+
     saved, skipped = [], 0
-    for i, f in enumerate(request.files.getlist("photo"), 1):
+    for i, f in enumerate(items, 1):
         # 没有 filename 的是空表单字段，不是文件。不静默吞掉，要计数报出来
         if not f.filename:
             skipped += 1
