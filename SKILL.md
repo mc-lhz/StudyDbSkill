@@ -76,10 +76,10 @@ indexes/  派生索引              ← 全脚本重建，禁止手工编辑
 
 ```yaml
 ---
-id: BIO-20261013-003        # BIO-YYYYMMDD-NNN，同日三位序号
+id: BIO-20261013-003        # BIO-YYYYMMDD-NNN，日期段=【登记日】不是考试日
 subject: 生物
 exam: BIO-20261013-01       # 指向 exams/ 同名文件
-date: 2026-10-13
+date: 2026-10-13            # ★ 考试日期，与 id 的日期段【可以不同】
 chapter: 神经调节           # 必填，命中 taxonomy
 point: 神经冲动的产生和传导   # 必填，命中 taxonomy
 point_ref: KP-20261013-01   # 指向知识点，可空
