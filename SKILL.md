@@ -196,6 +196,46 @@ updated: 2026-10-13
 
 ---
 
+## 复习工作流（队列 → 复习 → 记账）
+
+用户说「今天该复习什么」「有没有要复习的」时走这条。
+
+```bash
+python tools/Review/Queue.py            # 复习队列（默认）
+python tools/Review/Queue.py --pending  # 待复核队列
+```
+
+**两条队列，别混**：
+
+| 队列 | 内容 | 什么时候看 |
+|---|---|---|
+| 复习队列 | `verified: true` 且 `next_review` 到期 | 平时 |
+| 待复核队列 | `verified: false` | 录完新题之后，**先复核再复习** |
+
+排序 `score = 逾期天数 × value 权重`（高 3 / 中 2 / 低 1）。同一错因的记录会被
+`--group` 聚在一起，减少来回跳章。
+
+### ⚠️ 队列为空 ≠ 没事做
+
+首次使用时极可能遇到：记录全 `verified: false`，默认队列是**空的**——
+这是硬闸门在起作用，不是工具坏了。此时**该做的是复核**，跑 `--pending`。
+
+**不要因为队列空就去批量刷 `verified: true`。** 闸门一松，整个仓教的东西都不可信。
+
+### 复习完要记账（`Mark.py`，Phase 2 建设中）
+
+做完一道题必须把结果写回去，否则 `next_review` 永不推进，队列永远不缩小：
+
+```
+python tools/Review/Mark.py <id> --result right --yes
+python tools/Review/Mark.py <id> --result wrong --yes
+```
+
+间隔阶梯 `1 → 3 → 7 → 15 → 30` 天；重做错**重置为 1 天并降级状态**。
+`会但粗心` 类**不允许一次过 `已掌握`**，强制至少两次间隔。
+
+---
+
 ## 图片
 
 - 存 `assets/`，命名 `{id}-{两位序号}.{ext}`
@@ -235,7 +275,7 @@ updated: 2026-10-13
 | **0** 地基 | 四份真源 + 两份 schema + 双仓骨架 | ✅ 完成 |
 | **0.5** 首份真实卷子 | 18 条错题 + 17 张知识点卡 + 脱敏边界确立 | ✅ 完成 |
 | **1** 录入 | `Exams` `Errors` `Points` `Assets` `Capture` `Rebuild` CLI | 🔄 进行中 |
-| **2** 闭环 | `Review/Queue.py` `Mark.py` | ⬜ 未开始 |
+| **2** 闭环 | `Review/Queue.py` ✅ `Mark.py` ⬜ | 🔄 进行中 |
 | **3** 洞察 | `Stats/Weakness.py` `Health.py` | ⬜ 未开始 |
 | **4** RAG | 判据触发后才做，见 `AGENTS.md` | ⬜ 搁置 |
 
