@@ -222,7 +222,7 @@ python tools/Review/Queue.py --pending  # 待复核队列
 
 **不要因为队列空就去批量刷 `verified: true`。** 闸门一松，整个仓教的东西都不可信。
 
-### 复习完要记账（`Mark.py`，Phase 2 建设中）
+### 复习完要记账（`Mark.py`）
 
 做完一道题必须把结果写回去，否则 `next_review` 永不推进，队列永远不缩小：
 
@@ -231,8 +231,12 @@ python tools/Review/Mark.py <id> --result right --yes
 python tools/Review/Mark.py <id> --result wrong --yes
 ```
 
-间隔阶梯 `1 → 3 → 7 → 15 → 30` 天；重做错**重置为 1 天并降级状态**。
-`会但粗心` 类**不允许一次过 `已掌握`**，强制至少两次间隔。
+状态机：`新错 → 已订正 → 已复现 → 已掌握`，间隔 `1 → 3 → 7` 天（3 次毕业）；
+**做错一律降回 `新错`**，计数归零、明天重来。
+`会但粗心` 有独立守卫，**不允许一次过 `已掌握`**。
+
+不给 `--yes` 只预览、不写入（退出码 `5`）。`verified: false` 的记录**默认拒绝记账**——
+复习未经复核的内容等于在背错的东西。
 
 ---
 
@@ -275,7 +279,7 @@ python tools/Review/Mark.py <id> --result wrong --yes
 | **0** 地基 | 四份真源 + 两份 schema + 双仓骨架 | ✅ 完成 |
 | **0.5** 首份真实卷子 | 18 条错题 + 17 张知识点卡 + 脱敏边界确立 | ✅ 完成 |
 | **1** 录入 | `Exams` `Errors` `Points` `Assets` `Capture` `Rebuild` CLI | 🔄 进行中 |
-| **2** 闭环 | `Review/Queue.py` ✅ `Mark.py` ⬜ | 🔄 进行中 |
+| **2** 闭环 | `Review/Queue.py` ✅ `Mark.py` ✅ | ✅ 完成 |
 | **3** 洞察 | `Stats/Weakness.py` `Health.py` | ⬜ 未开始 |
 | **4** RAG | 判据触发后才做，见 `AGENTS.md` | ⬜ 搁置 |
 
