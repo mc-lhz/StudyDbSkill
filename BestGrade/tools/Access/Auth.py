@@ -17,7 +17,7 @@ from Common.Config import DEVICE_TYPE, BestGradeError, UsageError
 _AUTH_HINTS = ("登录", "会话", "失效", "过期", "未授权")
 
 
-def is_auth_error(exc):
+def isAuthError(exc):
     if getattr(exc, "status", None) in (401, 403):
         return True
     message = str(getattr(exc, "message", exc) or "")
@@ -26,8 +26,8 @@ def is_auth_error(exc):
 
 class AuthMixin:
     token = None
-    login_name = None
-    token_source = None  # "provided" | "login"
+    loginName = None
+    tokenSource = None  # "provided" | "login"
 
     def login(self, username, password):
         username = "" if username is None else str(username).strip()
@@ -41,41 +41,41 @@ class AuthMixin:
             "loginType": 1,
             "rememberMe": 2,
         }
-        data = self.post_json("/v2/users/sessions", body, auth=False)
+        data = self.postJson("/v2/users/sessions", body, auth=False)
         if not isinstance(data, dict) or not data.get("token"):
             raise BestGradeError("登录响应缺少 token")
         self.token = data["token"]
-        self.login_name = username
-        self.login_info = data
-        self.token_source = "login"
+        self.loginName = username
+        self.loginInfo = data
+        self.tokenSource = "login"
         return data
 
-    def use_token(self, token):
+    def useToken(self, token):
         """直接使用外部传入的 token，不发起登录请求。"""
         text = "" if token is None else str(token).strip()
         if not text:
             raise UsageError("--token 不能为空")
         self.token = text
-        self.token_source = "provided"
+        self.tokenSource = "provided"
         return text
 
-    def switch_student(self, student):
+    def switchStudent(self, student):
         """把会话切到指定学生，student 为学生字典。
 
         每次命令都要切换：复用 token 只省掉登录，不省会话里的学生上下文。
         """
-        student_id = student.get("studentId") if isinstance(student, dict) else str(student)
-        if not student_id:
+        studentId = student.get("studentId") if isinstance(student, dict) else str(student)
+        if not studentId:
             raise UsageError("缺少 studentId")
-        data = self.post_json(
+        data = self.postJson(
             "/v2/user-center/sessions",
-            {"studentId": student_id, "deviceType": DEVICE_TYPE},
+            {"studentId": studentId, "deviceType": DEVICE_TYPE},
         )
-        self.student_id = student_id
-        self.student = student if isinstance(student, dict) else {"studentId": student_id}
+        self.studentId = studentId
+        self.student = student if isinstance(student, dict) else {"studentId": studentId}
         return data
 
-    def ensure_token(self):
+    def ensureToken(self):
         if not self.token:
-            raise BestGradeError("尚未登录，请先调用 login() 或 use_token()")
+            raise BestGradeError("尚未登录，请先调用 login() 或 useToken()")
         return self.token

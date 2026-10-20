@@ -6,8 +6,8 @@
 
 | 方法 | 说明 |
 |---|---|
-| `get_json(path, params=None, auth=True)` | GET 并返回 `data` |
-| `post_json(path, body, params=None, auth=True)` | POST JSON 并返回 `data` |
+| `getJson(path, params=None, auth=True)` | GET 并返回 `data` |
+| `postJson(path, body, params=None, auth=True)` | POST JSON 并返回 `data` |
 | `request(method, path, body, params, auth)` | 底层方法 |
 | `download(url, dest)` | 下载图片，返回 `(path, bytes, kind)` |
 

@@ -22,13 +22,13 @@ from Common.Config import (
 
 
 class Http:
-    def __init__(self, base_url=BASE_URL, timeout=TIMEOUT):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, baseUrl=BASE_URL, timeout=TIMEOUT):
+        self.baseUrl = baseUrl.rstrip("/")
         self.timeout = timeout
         self.token = None
 
     def _url(self, path, params=None):
-        url = path if path.startswith(("http://", "https://")) else self.base_url + path
+        url = path if path.startswith(("http://", "https://")) else self.baseUrl + path
         if params:
             sep = "&" if "?" in url else "?"
             url = url + sep + urllib.parse.urlencode(params)
@@ -59,13 +59,13 @@ class Http:
         except urllib.error.HTTPError as exc:
             payload = exc.read()
             raise BestGradeError(
-                self._error_message(payload) or f"HTTP {exc.code}", status=exc.code
+                self._errorMessage(payload) or f"HTTP {exc.code}", status=exc.code
             ) from None
         except urllib.error.URLError as exc:
             raise BestGradeError(f"网络不可达：{exc.reason}") from None
         return self._unwrap(payload)
 
-    def _error_message(self, payload):
+    def _errorMessage(self, payload):
         try:
             data = json.loads(payload.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
@@ -84,18 +84,18 @@ class Http:
         meta = data.get("meta") if "code" not in data and isinstance(data.get("meta"), dict) else data
         code = meta.get("code", 0)
         try:
-            code_num = int(code)
+            codeNum = int(code)
         except (TypeError, ValueError):
-            code_num = code
-        if code_num != 0:
+            codeNum = code
+        if codeNum != 0:
             message = meta.get("msg") or meta.get("message") or f"接口返回 code={code}"
-            raise BestGradeError(str(message), code=code_num)
+            raise BestGradeError(str(message), code=codeNum)
         return data.get("data")
 
-    def get_json(self, path, params=None, auth=True):
+    def getJson(self, path, params=None, auth=True):
         return self.request("GET", path, params=params, auth=auth)
 
-    def post_json(self, path, body, params=None, auth=True):
+    def postJson(self, path, body, params=None, auth=True):
         return self.request("POST", path, body=body, params=params, auth=auth)
 
     def download(self, url, dest):
@@ -108,7 +108,7 @@ class Http:
             raise BestGradeError(f"图片下载失败：HTTP {exc.code}", status=exc.code) from None
         except urllib.error.URLError as exc:
             raise BestGradeError(f"图片下载失败：{exc.reason}") from None
-        kind = sniff_image(payload)
+        kind = sniffImage(payload)
         if kind is None:
             raise BestGradeError("下载内容不是 PNG/JPEG，可能链接已过期")
         parent = os.path.dirname(os.path.abspath(dest))
@@ -125,7 +125,7 @@ class Http:
         return dest, len(payload), kind
 
 
-def sniff_image(payload):
+def sniffImage(payload):
     if payload.startswith(b"\x89PNG\r\n\x1a\n"):
         return "png"
     if payload.startswith(b"\xff\xd8\xff"):

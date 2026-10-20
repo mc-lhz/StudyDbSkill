@@ -6,7 +6,7 @@ import datetime
 from Common.Config import DEFAULT_LIMIT, UsageError
 
 
-def format_exam(exam, index=None):
+def formatExam(exam, index=None):
     prefix = f"[{index}] " if index is not None else ""
     stamp = exam.get("time")
     when = ""
@@ -18,7 +18,7 @@ def format_exam(exam, index=None):
     return f"{prefix}{exam.get('name', '')}  {when}  examId={exam.get('examId', '')}{tail}"
 
 
-def format_paper(paper, index=None):
+def formatPaper(paper, index=None):
     prefix = f"[{index}] " if index is not None else ""
     return (
         f"{prefix}{paper.get('subject', '')}（{paper.get('name', '')}）  "
@@ -28,15 +28,15 @@ def format_paper(paper, index=None):
 
 
 class ExamsMixin:
-    def list_exams(self, limit=DEFAULT_LIMIT, start=0):
+    def listExams(self, limit=DEFAULT_LIMIT, start=0):
         if limit <= 0:
             raise UsageError("--limit 必须大于 0")
-        data = self.get_json("/v3/exam/list", params={"start": start, "limit": limit})
+        data = self.getJson("/v3/exam/list", params={"start": start, "limit": limit})
         return data if isinstance(data, dict) else {}
 
-    def resolve_exam(self, selector, limit=DEFAULT_LIMIT):
+    def resolveExam(self, selector, limit=DEFAULT_LIMIT):
         limit = max(int(limit), DEFAULT_LIMIT)
-        exams = self.list_exams(limit=limit).get("list") or []
+        exams = self.listExams(limit=limit).get("list") or []
         if not exams:
             raise UsageError("没有可查询的考试")
         text = str(selector).strip()
@@ -53,28 +53,28 @@ class ExamsMixin:
         if len(matches) > 1:
             raise UsageError(
                 f"考试「{text}」有多条匹配，请改用 examId 或序号：\n"
-                + "\n".join(format_exam(e, i + 1) for i, e in enumerate(exams))
+                + "\n".join(formatExam(e, i + 1) for i, e in enumerate(exams))
             )
         raise UsageError(
             f"找不到考试「{text}」，候选如下：\n"
-            + "\n".join(format_exam(e, i + 1) for i, e in enumerate(exams))
+            + "\n".join(formatExam(e, i + 1) for i, e in enumerate(exams))
         )
 
-    def exam_overview(self, exam_id):
-        data = self.get_json(f"/v3/exam/{exam_id}/overview")
+    def examOverview(self, examId):
+        data = self.getJson(f"/v3/exam/{examId}/overview")
         if not isinstance(data, dict):
-            raise UsageError(f"考试 {exam_id} 没有元数据")
+            raise UsageError(f"考试 {examId} 没有元数据")
         return data
 
-    def resolve_paper(self, exam_id, subject=None, paper_id=None, pid=None):
-        overview = self.exam_overview(exam_id)
+    def resolvePaper(self, examId, subject=None, paperId=None, pid=None):
+        overview = self.examOverview(examId)
         papers = overview.get("papers") or []
         if not papers:
-            raise UsageError(f"考试 {exam_id} 没有科目数据")
+            raise UsageError(f"考试 {examId} 没有科目数据")
         for paper in papers:
             if pid and str(paper.get("pid")) == str(pid):
                 return paper, overview
-            if paper_id and str(paper.get("paperId")) == str(paper_id):
+            if paperId and str(paper.get("paperId")) == str(paperId):
                 return paper, overview
         if subject:
             text = str(subject).strip()
@@ -96,10 +96,10 @@ class ExamsMixin:
             if len(partial) > 1:
                 raise UsageError(
                     f"科目「{text}」有多条匹配，请改用 --paper：\n"
-                    + "\n".join(format_paper(p, i + 1) for i, p in enumerate(papers))
+                    + "\n".join(formatPaper(p, i + 1) for i, p in enumerate(papers))
                 )
             raise UsageError(
                 f"找不到科目「{text}」，可选：\n"
-                + "\n".join(format_paper(p, i + 1) for i, p in enumerate(papers))
+                + "\n".join(formatPaper(p, i + 1) for i, p in enumerate(papers))
             )
         raise UsageError("必须提供 --subject 或 --paper（或 --pid）")

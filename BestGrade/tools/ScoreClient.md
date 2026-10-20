@@ -36,10 +36,10 @@ python tools/ScoreClient.py images   --token <token> --student 2 --exam 2592656 
 from ScoreClient import ScoreClient
 
 c = ScoreClient()
-c.use_token("<token>")          # 或 c.login("账号", "密码")
-student = c.select_student("2")
-c.switch_student(student)
-exams = c.list_exams(limit=5)["list"]
+c.useToken("<token>")          # 或 c.login("账号", "密码")
+student = c.selectStudent("2")
+c.switchStudent(student)
+exams = c.listExams(limit=5)["list"]
 ```
 
 类本身不做隐式登录；CLI 每个子命令都会先取凭据再按需切换学生。

@@ -7,23 +7,23 @@ token 由 CLI 打印到标准输出，后续命令用 `--token` 传入。
 
 - 密码做 Base64 后提交 `POST /v2/users/sessions`；**按原样编码，不 strip、不忽略点号**（含首尾点与空格）。
 - 固定 `roleType=2, loginType=1, rememberMe=2`。
-- 成功后把 `data.token` 写入 `self.token`，`token_source="login"`，并保存 `login_info`。
+- 成功后把 `data.token` 写入 `self.token`，`tokenSource="login"`，并保存 `loginInfo`。
 - 缺账号/密码抛 `UsageError`；响应无 token 抛 `BestGradeError`。
 - **不写任何文件。**
 
-## `use_token(token)`
+## `useToken(token)`
 
-直接采用外部传入的 token，不发起登录请求，`token_source="provided"`。
+直接采用外部传入的 token，不发起登录请求，`tokenSource="provided"`。
 空 token 抛 `UsageError`（会先 strip 掉复制时带上的换行/空格）。
 
-## `switch_student(student)`
+## `switchStudent(student)`
 
 - 接受学生字典或 `studentId` 字符串。
 - `POST /v2/user-center/sessions`，body `{studentId, deviceType:"3"}`。
-- 保存 `self.student` 与 `self.student_id`。
+- 保存 `self.student` 与 `self.studentId`。
 - ⚠️ **每次命令都要切换**：复用 token 只省掉登录，不省会话里的学生上下文。
 
-## `is_auth_error(exc)`
+## `isAuthError(exc)`
 
 判断是否是会话失效：HTTP `401/403`，或文案含「登录 / 会话 / 失效 / 过期 / 未授权」。
 接口没有文档化的过期码，所以退一步看状态与文案——宁可多登一次，

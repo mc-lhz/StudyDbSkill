@@ -15,50 +15,50 @@ import json
 import os
 import sys
 
-from Access.Auth import AuthMixin, is_auth_error
+from Access.Auth import AuthMixin, isAuthError
 from Access.HttpTransport import Http
-from Common.Config import BestGradeError, DEFAULT_LIMIT, UsageError, mask_account
+from Common.Config import BestGradeError, DEFAULT_LIMIT, UsageError, maskAccount
 from ExamCenter.AnswerSheet import AnswerSheetMixin
-from ExamCenter.Exams import ExamsMixin, format_exam, format_paper
-from StudentBase.Students import StudentsMixin, format_student
+from ExamCenter.Exams import ExamsMixin, formatExam, formatPaper
+from StudentBase.Students import StudentsMixin, formatStudent
 
 
 class ScoreClient(AuthMixin, StudentsMixin, ExamsMixin, AnswerSheetMixin, Http):
     pass
 
 
-def _print_json(payload):
+def _printJson(payload):
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
-def _prepare(client, args, need_student=True):
+def _prepare(client, args, needStudent=True):
     """拿到可用凭据：优先复用传入的 token，没有才登录。
 
     切学生是每次都要做的：复用 token 只省掉登录，不省会话里的学生上下文。
     """
     token = getattr(args, "token", None)
     if token:
-        client.use_token(token)
+        client.useToken(token)
     else:
         client.login(getattr(args, "username", None), getattr(args, "password", None))
-    if not need_student:
+    if not needStudent:
         return None
-    student = client.select_student(args.student)
-    client.switch_student(student)
+    student = client.selectStudent(args.student)
+    client.switchStudent(student)
     return student
 
 
-def cmd_login(client, args):
+def cmdLogin(client, args):
     data = client.login(args.username, args.password)
     if args.json:
-        _print_json({
+        _printJson({
             "token": client.token,
-            "loginName": client.login_name,
+            "loginName": client.loginName,
             "userId": data.get("userId"),
             "studentId": data.get("studentId"),
         })
         return 0
-    print(f"登录成功：{mask_account(client.login_name)}")
+    print(f"登录成功：{maskAccount(client.loginName)}")
     print("")
     print(client.token)
     print("")
@@ -66,35 +66,35 @@ def cmd_login(client, args):
     return 0
 
 
-def cmd_students(client, args):
-    _prepare(client, args, need_student=False)
-    students = client.list_students()
+def cmdStudents(client, args):
+    _prepare(client, args, needStudent=False)
+    students = client.listStudents()
     if args.json:
-        _print_json({"students": students})
+        _printJson({"students": students})
         return 0
     print(f"共 {len(students)} 个绑定学生：")
     for index, student in enumerate(students, start=1):
-        print(format_student(student, index))
+        print(formatStudent(student, index))
     return 0
 
 
-def cmd_exams(client, args):
+def cmdExams(client, args):
     _prepare(client, args)
-    data = client.list_exams(limit=args.limit)
+    data = client.listExams(limit=args.limit)
     exams = data.get("list") or []
     if args.json:
-        _print_json(data)
+        _printJson(data)
         return 0
     print(f"共 {data.get('totalCount', len(exams))} 场考试，显示 {len(exams)} 场：")
     for index, exam in enumerate(exams, start=1):
-        print(format_exam(exam, index))
+        print(formatExam(exam, index))
     return 0
 
 
-def cmd_overview(client, args):
+def cmdOverview(client, args):
     _prepare(client, args)
-    exam = client.resolve_exam(args.exam, limit=args.limit)
-    overview = client.exam_overview(exam["examId"])
+    exam = client.resolveExam(args.exam, limit=args.limit)
+    overview = client.examOverview(exam["examId"])
     if args.out:
         path = os.path.abspath(args.out)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -102,30 +102,30 @@ def cmd_overview(client, args):
             json.dump(overview, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
     if args.json:
-        _print_json(overview)
+        _printJson(overview)
         return 0
     print(f"{overview.get('name', '')}  examId={overview.get('examId')}")
     print(f"总分 {overview.get('score')}/{overview.get('manfen')}  科目 {len(overview.get('papers') or [])} 门")
     for index, paper in enumerate(overview.get("papers") or [], start=1):
-        print(format_paper(paper, index))
+        print(formatPaper(paper, index))
     if args.out:
         print(f"已保存：{os.path.abspath(args.out)}")
     return 0
 
 
-def cmd_images(client, args):
+def cmdImages(client, args):
     _prepare(client, args)
-    exam = client.resolve_exam(args.exam, limit=args.limit)
-    manifest = client.fetch_images(
+    exam = client.resolveExam(args.exam, limit=args.limit)
+    manifest = client.fetchImages(
         exam["examId"],
         subject=args.subject,
-        paper_id=args.paper,
+        paperId=args.paper,
         pid=args.pid,
         kind=args.kind,
-        out_dir=args.out,
+        outDir=args.out,
     )
     if args.json:
-        _print_json(manifest)
+        _printJson(manifest)
         return 0
     print(f"考试：{exam.get('name', '')}（{exam['examId']}）")
     print(f"科目：{manifest.get('subject')}  paperId={manifest.get('paperId')}")
@@ -141,7 +141,7 @@ def cmd_images(client, args):
     return 0
 
 
-def build_parser():
+def buildParser():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--token", help="已登录的 token（优先使用，不发起登录）")
     common.add_argument("--username", help="登录账号（仅 login 或首次使用时需要）")
@@ -157,20 +157,20 @@ def build_parser():
 
     p = sub.add_parser("login", parents=[common],
                        help="用账号密码换取 token（打印到标准输出）")
-    p.set_defaults(func=cmd_login, student=None)
+    p.set_defaults(func=cmdLogin, student=None)
 
     p = sub.add_parser("students", parents=[common], help="列出绑定学生")
-    p.set_defaults(func=cmd_students)
+    p.set_defaults(func=cmdStudents)
 
     p = sub.add_parser("exams", parents=[common], help="列出考试")
     p.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="最多返回场次")
-    p.set_defaults(func=cmd_exams)
+    p.set_defaults(func=cmdExams)
 
     p = sub.add_parser("overview", parents=[common], help="打印/保存考试元数据")
     p.add_argument("--exam", required=True, help="examId 或列表序号")
     p.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     p.add_argument("--out", help="元数据 JSON 保存路径")
-    p.set_defaults(func=cmd_overview)
+    p.set_defaults(func=cmdOverview)
 
     p = sub.add_parser("images", parents=[common], help="下载原卷与答题卡图片")
     p.add_argument("--exam", required=True, help="examId 或列表序号")
@@ -180,7 +180,7 @@ def build_parser():
     p.add_argument("--pid", help="pid")
     p.add_argument("--kind", choices=("both", "paper", "answer"), default="both")
     p.add_argument("--out", help="输出目录（默认 %%TEMP%%\\BestGrade\\<examId>\\<subject>）")
-    p.set_defaults(func=cmd_images)
+    p.set_defaults(func=cmdImages)
     return parser
 
 
@@ -189,21 +189,21 @@ def _report(exc):
         print(f"参数错误：{exc}", file=sys.stderr)
     else:
         print(f"请求失败：{exc}", file=sys.stderr)
-    return exc.exit_code
+    return exc.exitCode
 
 
 def _retryable(client, args, exc):
     """token 失效且同时给了账号密码时，允许自动重登一次。"""
     return (
-        client.token_source == "provided"
+        client.tokenSource == "provided"
         and bool(getattr(args, "username", None))
         and bool(getattr(args, "password", None))
-        and is_auth_error(exc)
+        and isAuthError(exc)
     )
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    args = buildParser().parse_args(argv)
     if args.command == "login" and (not args.username or not args.password):
         print("参数错误：login 需要 --username 与 --password", file=sys.stderr)
         return 2

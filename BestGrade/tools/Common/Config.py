@@ -23,7 +23,7 @@ USER_AGENT = (
 class BestGradeError(Exception):
     """业务或网络错误，默认退出码 3。"""
 
-    exit_code = 3
+    exitCode = 3
 
     def __init__(self, message, code=None, status=None):
         super().__init__(message)
@@ -35,10 +35,10 @@ class BestGradeError(Exception):
 class UsageError(BestGradeError):
     """参数、选择歧义等使用者错误，退出码 2。"""
 
-    exit_code = 2
+    exitCode = 2
 
 
-def output_root():
+def outputRoot():
     """输出根目录，固定落在系统临时目录，避免污染仓库。"""
     return OUTPUT_ROOT
 
@@ -46,13 +46,13 @@ def output_root():
 _SAFE = re.compile(r'[\\/:*?"<>|\r\n\t]+')
 
 
-def safe_name(value, fallback="item"):
+def safeName(value, fallback="item"):
     """把考试名/科目名收敛成安全的单层目录名。"""
     text = _SAFE.sub("_", str(value or "")).strip(" ._")
     return text[:60] or fallback
 
 
-def mask_account(name):
+def maskAccount(name):
     """账号脱敏：保留首尾字符。"""
     text = str(name or "")
     if len(text) <= 2:

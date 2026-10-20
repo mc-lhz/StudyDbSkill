@@ -1,10 +1,10 @@
 # Students（绑定学生）
 
-## `list_students()`
+## `listStudents()`
 
 `GET /v2/user-center/related-students`，返回数组。兼容 `{list:[...]}` 形式。
 
-## `select_student(selector=None)`
+## `selectStudent(selector=None)`
 
 | selector | 匹配规则 |
 |---|---|
@@ -16,6 +16,6 @@
 
 匹配多条或零条都会列出全部候选，退出码 2；**不会自动猜**同名学生的年级。
 
-## `format_student(student, index=None)`
+## `formatStudent(student, index=None)`
 
 生成一行摘要：`[序号] 姓名  年级班级  学校  学号  id=...`。
