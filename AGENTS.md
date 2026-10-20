@@ -215,7 +215,7 @@ schema 见 `SKILL.md`。**改动 schema 必须三处同步**：`SKILL.md`、`ref
 
 - **版本号唯一落点是仓库根 `VERSION`**，与 release tag 逐字一致（含 `v` 前缀）
 - **禁止在 README / SKILL / 代码注释里手写版本号**——多处必然漂移，文档只说「见 VERSION」
-- 命名：beta 期 `v0.1.0-betaN`，功能冻结后转 `v0.1.0`，破坏性改动才升 minor
+- 命名：beta 期 `v0.1.0-beta.N`（点分，semver 预发布标识符；**不要写成 `betaN`**，`beta.2` 与 `beta.10` 才排得对），功能冻结后转 `v0.1.0`，破坏性改动才升 minor
 - **打包必须排除 `data/`**（用 `git ls-files` 取源，额外排除 `.github/`、`.gitignore`、`data/`）
 - 发版前必跑：`compileall` + `TestContract.py` + `TestSchema.py`
 
