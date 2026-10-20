@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# 下载产物与本地缓存（默认在 %TEMP%，这里兜底）
+bestgrade-out/
+BestGrade_*/
+*.xlsx
+
+# 凭据/环境文件
+.env
+*.local.json
+*.local.toml
