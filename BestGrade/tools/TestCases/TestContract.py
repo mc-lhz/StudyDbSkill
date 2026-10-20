@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import compileall
 import importlib
+import os
 import re
 import subprocess
 import sys
@@ -69,7 +70,8 @@ def test_cli():
     script = str(TOOLS / "ScoreClient.py")
     ok = True
     output = ""
-    for args in (["--help"], ["students", "--help"], ["images", "--help"]):
+    for args in (["--help"], ["students", "--help"], ["images", "--help"],
+                 ["login", "--help"]):
         proc = subprocess.run(
             [sys.executable, script, *args],
             capture_output=True,
@@ -153,9 +155,88 @@ def test_password_preserved():
     check("password keeps dots/spaces", decoded == raw, repr(decoded))
 
 
+def test_use_token():
+    """token 模式不发起登录请求。"""
+    sys.path.insert(0, str(TOOLS))
+    from Access.Auth import AuthMixin
+    from Common.Config import UsageError
+
+    calls = []
+
+    class Dummy(AuthMixin):
+        token = None
+
+        def post_json(self, path, body, params=None, auth=True):
+            calls.append(path)
+            return {"token": "from-login"}
+
+    d = Dummy()
+    d.use_token("  provided-token  ")
+    ok = d.token == "provided-token" and d.token_source == "provided" and not calls
+
+    empty_rejected = False
+    try:
+        Dummy().use_token("   ")
+    except UsageError:
+        empty_rejected = True
+
+    check("use_token accepts token without logging in", ok, repr(d.token))
+    check("use_token rejects empty token", empty_rejected)
+
+
+def test_credentials_not_written():
+    """REVERSE CASE: 登录不得在磁盘上留下任何文件。
+
+    早期版本把 token 缓存到 session.json；现在改为只打到标准输出。
+    若有人把缓存加回来，这条用例会红。
+    """
+    sys.path.insert(0, str(TOOLS))
+    from Access.Auth import AuthMixin
+
+    class Dummy(AuthMixin):
+        token = None
+
+        def post_json(self, path, body, params=None, auth=True):
+            return {"token": "fake-token-for-disk-test"}
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        before = set(Path(tmp).rglob("*"))
+        old = os.getcwd()
+        os.chdir(tmp)
+        try:
+            Dummy().login("someuser", "somepass")
+        finally:
+            os.chdir(old)
+        after = set(Path(tmp).rglob("*"))
+        check("反向用例 登录不写盘", before == after, "新增: %s" % (after - before))
+
+    stray = [
+        str(p.relative_to(ROOT))
+        for p in ROOT.rglob("*")
+        if p.is_file() and p.name in ("session.json", ".session", "credentials.json")
+    ]
+    check("反向用例 仓库内无凭据缓存文件", not stray, ", ".join(stray))
+
+
 def test_version():
-    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    ok = bool(re.fullmatch(r"\d+\.\d+\.\d+", version))
+    """VERSION 属于 skill 仓根，而本测试位于 BestGrade/ 子目录里。
+
+    不能写死 parents[N]——目录层级改过一次，写死的层级就失效了。
+    向上找第一个含 VERSION 的目录，对布局变化免疫。
+    """
+    version_file = None
+    for parent in [ROOT, *ROOT.parents]:
+        candidate = parent / "VERSION"
+        if candidate.exists():
+            version_file = candidate
+            break
+    if version_file is None:
+        check("VERSION semver", False, "找不到 VERSION")
+        return
+    version = version_file.read_text(encoding="utf-8").strip()
+    # 允许 `v` 前缀与 beta 后缀：本仓约定 VERSION 与 release tag 逐字一致。
+    ok = bool(re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?", version))
     check("VERSION semver", ok, version)
 
 
@@ -184,6 +265,8 @@ def main():
     test_credentials()
     test_absolute_paths()
     test_password_preserved()
+    test_use_token()
+    test_credentials_not_written()
     test_version()
     test_skill()
     failed = [item for item in results if not item[1]]

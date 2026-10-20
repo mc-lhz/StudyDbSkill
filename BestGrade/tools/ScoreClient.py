@@ -2,6 +2,11 @@
 
 能力边界：登录、学生切换、考试列表、考试元数据、原卷/答题卡图片。
 不包含写操作，也不访问受限的题目详情接口。
+
+凭据策略：**什么都不落盘**。
+- `login` 子命令用账号密码换 token，并把 token 打到标准输出；
+- 其余命令用 `--token` 接收，不再登录；
+- 账号密码只在 `login` 那一次的命令行里存在，进程结束即消失。
 """
 from __future__ import annotations
 
@@ -10,9 +15,9 @@ import json
 import os
 import sys
 
-from Access.Auth import AuthMixin
+from Access.Auth import AuthMixin, is_auth_error
 from Access.HttpTransport import Http
-from Common.Config import BestGradeError, DEFAULT_LIMIT, UsageError
+from Common.Config import BestGradeError, DEFAULT_LIMIT, UsageError, mask_account
 from ExamCenter.AnswerSheet import AnswerSheetMixin
 from ExamCenter.Exams import ExamsMixin, format_exam, format_paper
 from StudentBase.Students import StudentsMixin, format_student
@@ -26,8 +31,16 @@ def _print_json(payload):
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
-def _login(client, args, need_student=True):
-    client.login(args.username, args.password)
+def _prepare(client, args, need_student=True):
+    """拿到可用凭据：优先复用传入的 token，没有才登录。
+
+    切学生是每次都要做的：复用 token 只省掉登录，不省会话里的学生上下文。
+    """
+    token = getattr(args, "token", None)
+    if token:
+        client.use_token(token)
+    else:
+        client.login(getattr(args, "username", None), getattr(args, "password", None))
     if not need_student:
         return None
     student = client.select_student(args.student)
@@ -35,8 +48,26 @@ def _login(client, args, need_student=True):
     return student
 
 
+def cmd_login(client, args):
+    data = client.login(args.username, args.password)
+    if args.json:
+        _print_json({
+            "token": client.token,
+            "loginName": client.login_name,
+            "userId": data.get("userId"),
+            "studentId": data.get("studentId"),
+        })
+        return 0
+    print(f"登录成功：{mask_account(client.login_name)}")
+    print("")
+    print(client.token)
+    print("")
+    print("以上是 token，后续命令用 --token 传入。它不写盘，只存在于本次输出里。")
+    return 0
+
+
 def cmd_students(client, args):
-    _login(client, args, need_student=False)
+    _prepare(client, args, need_student=False)
     students = client.list_students()
     if args.json:
         _print_json({"students": students})
@@ -48,7 +79,7 @@ def cmd_students(client, args):
 
 
 def cmd_exams(client, args):
-    _login(client, args)
+    _prepare(client, args)
     data = client.list_exams(limit=args.limit)
     exams = data.get("list") or []
     if args.json:
@@ -61,7 +92,7 @@ def cmd_exams(client, args):
 
 
 def cmd_overview(client, args):
-    _login(client, args)
+    _prepare(client, args)
     exam = client.resolve_exam(args.exam, limit=args.limit)
     overview = client.exam_overview(exam["examId"])
     if args.out:
@@ -83,7 +114,7 @@ def cmd_overview(client, args):
 
 
 def cmd_images(client, args):
-    _login(client, args)
+    _prepare(client, args)
     exam = client.resolve_exam(args.exam, limit=args.limit)
     manifest = client.fetch_images(
         exam["examId"],
@@ -112,16 +143,21 @@ def cmd_images(client, args):
 
 def build_parser():
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--username", required=True, help="登录账号")
-    common.add_argument("--password", required=True, help="登录密码（仅本次进程使用）")
+    common.add_argument("--token", help="已登录的 token（优先使用，不发起登录）")
+    common.add_argument("--username", help="登录账号（仅 login 或首次使用时需要）")
+    common.add_argument("--password", help="登录密码（仅本次进程使用，不落盘）")
     common.add_argument("--student", help="学生 id、序号或姓名（多学生时必填）")
     common.add_argument("--json", action="store_true", help="输出原始 JSON")
 
     parser = argparse.ArgumentParser(
         prog="ScoreClient.py",
-        description="学校分数系统只读客户端：登录、切换学生、考试、原卷/答题卡。",
+        description="学校分数系统只读客户端：登录换 token，之后用 token 查询。",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("login", parents=[common],
+                       help="用账号密码换取 token（打印到标准输出）")
+    p.set_defaults(func=cmd_login, student=None)
 
     p = sub.add_parser("students", parents=[common], help="列出绑定学生")
     p.set_defaults(func=cmd_students)
@@ -148,17 +184,42 @@ def build_parser():
     return parser
 
 
+def _report(exc):
+    if isinstance(exc, UsageError):
+        print(f"参数错误：{exc}", file=sys.stderr)
+    else:
+        print(f"请求失败：{exc}", file=sys.stderr)
+    return exc.exit_code
+
+
+def _retryable(client, args, exc):
+    """token 失效且同时给了账号密码时，允许自动重登一次。"""
+    return (
+        client.token_source == "provided"
+        and bool(getattr(args, "username", None))
+        and bool(getattr(args, "password", None))
+        and is_auth_error(exc)
+    )
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.command == "login" and (not args.username or not args.password):
+        print("参数错误：login 需要 --username 与 --password", file=sys.stderr)
+        return 2
     client = ScoreClient()
     try:
         return args.func(client, args)
-    except UsageError as exc:
-        print(f"参数错误：{exc}", file=sys.stderr)
-        return exc.exit_code
     except BestGradeError as exc:
-        print(f"请求失败：{exc}", file=sys.stderr)
-        return exc.exit_code
+        if _retryable(client, args, exc):
+            print("token 已失效，用提供的账号密码重新登录…", file=sys.stderr)
+            client.token = None
+            args.token = None
+            try:
+                return args.func(client, args)
+            except BestGradeError as again:
+                return _report(again)
+        return _report(exc)
 
 
 if __name__ == "__main__":

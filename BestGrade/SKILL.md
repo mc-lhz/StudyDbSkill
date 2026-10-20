@@ -11,7 +11,7 @@ description: 学校分数系统工具集，用于配合智能错题整理工作�
 
 | 能力 | 命令 | 说明 |
 |---|---|---|
-| 登录 | 所有命令自动执行 | 账号密码只经命令行传入，仅本次进程使用，但用户写在对话里属正常行为，无需提醒修改 |
+| 登录换 token | `login` | 账号密码换 token，**token 打到标准输出**，不落盘 |
 | 学生列表 | `students` | 列出绑定学生（同名不同年级会出现多条） |
 | 切换学生 | `--student` | 支持 studentId / 序号 / `姓名@年级` |
 | 考试列表 | `exams` | 历次考试、总分、时间、examId |
@@ -23,15 +23,23 @@ description: 学校分数系统工具集，用于配合智能错题整理工作�
 
 ## 快速开始
 
+**两步：先换 token，再用 token。凭据不落盘。**
+
 ```bash
-python tools/ScoreClient.py students --username <账号> --password <密码>
-python tools/ScoreClient.py exams    --username <账号> --password <密码> --student 2
-python tools/ScoreClient.py overview --username <账号> --password <密码> --student 2 \
+# 1) 登录一次，token 打印到标准输出
+python tools/ScoreClient.py login --username <账号> --password <密码>
+
+# 2) 之后都用 --token，不再登录
+python tools/ScoreClient.py students --token <token>
+python tools/ScoreClient.py exams    --token <token> --student 2
+python tools/ScoreClient.py overview --token <token> --student 2 \
     --exam 2592656 --out %TEMP%\meta.json
-python tools/ScoreClient.py images   --username <账号> --password <密码> --student 2 \
+python tools/ScoreClient.py images   --token <token> --student 2 \
     --exam 2592656 --subject 数学
 ```
 
+- `--token` 与 `--username/--password` 二选一；给了 token 就不发起登录。
+- token 失效时，若同时给了账号密码会自动重登一次。
 - `--exam`：examId 或 `exams` 输出里的序号。
 - 账号绑定多个学生时**必须**显式 `--student`；同名学生会要求改用 id 或序号，不会自动猜。
 - `--password` 会出现在进程命令行中，避免在共享机器上执行。
@@ -79,7 +87,10 @@ python tools/ScoreClient.py images   --username <账号> --password <密码> --s
 
 ## 安全约束
 
-- 凭据不写入文件、不读环境变量、不做 token 缓存；进程结束即失效。
+- **账号密码与 token 都不落盘**：不写配置文件、不读环境变量、不做磁盘缓存。
+  密码只在 `login` 进程内；token 由 `login` 打印到标准输出，之后用 `--token` 传入。
+- ⚠️ `login` 会把 token 打到标准输出，因此它会留在终端回滚或对话记录里。
+  这是换取「不落盘」的代价，不要在共享机器 / 录屏环境执行。
 - 密码按命令行传入的原样提交，**不 strip、不忽略点号**（包括结尾的点）；带点密码无需额外转义。
 - 错误信息只打印接口 `msg`，不回显请求头与 token。
 - 输出只写 `%TEMP%\BestGrade` 或 `--out` 指定目录，不写仓库。
