@@ -84,7 +84,15 @@ def resolve_data_root(skill_dir):
 
 def parse_front_matter(text):
     """Minimal YAML-subset parser. No PyYAML dependency on purpose --
-    a validator that needs its own deps is a validator nobody runs."""
+    a validator that needs its own deps is a validator nobody runs.
+
+    Strips a leading UTF-8 BOM first: with the BOM left in place every file
+    looks like it has no front matter, so the validator silently passes
+    records it should flag. PowerShell 5.1 `Set-Content -Encoding utf8`
+    writes exactly such a BOM.
+    """
+    if text.startswith("\ufeff"):
+        text = text[1:]
     if not text.startswith("---"):
         return {}, text
     end = text.find("\n---", 3)
@@ -257,14 +265,24 @@ def main():
                              ("points", "points", validate_point)):
         folder_path = os.path.join(subject, kind)
         if not os.path.isdir(folder_path):
+            warnings.append("missing %s/ -- 目录不存在，跳过了这一层校验"
+                            % os.path.relpath(folder_path, subject))
             continue
-        for name in sorted(os.listdir(folder_path)):
-            if not name.endswith(".md"):
-                continue
-            full = os.path.join(folder_path, name)
-            with open(full, encoding="utf-8") as fh:
-                fn(os.path.relpath(full, subject), fh.read(), enums, problems, warnings)
-            counts[kind] += 1
+        # 递归扫描：points/ 按章分了子目录（体液调节/神经调节/…）。
+        # 只扫一层会把 17 张卡读成 0 张，还照样 RESULT: OK —— 沉默的谎。
+        for dirpath, dirnames, filenames in os.walk(folder_path):
+            dirnames.sort()
+            for name in sorted(filenames):
+                if not name.endswith(".md"):
+                    continue
+                full = os.path.join(dirpath, name)
+                with open(full, encoding="utf-8") as fh:
+                    fn(os.path.relpath(full, subject), fh.read(), enums, problems, warnings)
+                counts[kind] += 1
+        if counts[kind] == 0:
+            warnings.append(
+                "no records under %s/ -- 目录存在但一条都没读到，先确认目录结构"
+                % os.path.relpath(folder_path, subject))
 
     exams_path = os.path.join(subject, "exams")
     if os.path.isdir(exams_path):

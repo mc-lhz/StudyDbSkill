@@ -28,9 +28,10 @@
 
 ## 对应数据
 
-`<数据根>/data/subjects/生物/errors/*.md` —— 读 front-matter 与首个 `# 标题`。
-`<数据根>/data/subjects/生物/points/*.md` —— 只为把 `point_ref` 换成知识点标题
-（决策 1.0：错题是证据，知识点是资产）。
+`<数据根>/data/subjects/生物/errors/**/*.md` —— 递归扫描（允许按章分子目录），
+读 front-matter 与首个 `# 标题`。
+`<数据根>/data/subjects/生物/points/**/*.md` —— 递归扫描，只为把 `point_ref`
+换成知识点标题（决策 1.0：错题是证据，知识点是资产）。
 
 ## 方法清单
 

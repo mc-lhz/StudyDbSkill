@@ -142,16 +142,21 @@ def load_points(points_dir):
     titles = {}
     if not os.path.isdir(points_dir):
         return titles
-    for name in sorted(os.listdir(points_dir)):
-        if not name.endswith(".md"):
-            continue
-        try:
-            with open(os.path.join(points_dir, name), encoding="utf-8") as fh:
-                meta, _ = parse_front_matter(fh.read())
-        except Exception as exc:
-            warn("unreadable point %s: %s" % (name, exc))
-            continue
-        titles[meta.get("id") or os.path.splitext(name)[0]] = meta.get("title", "")
+    # points/ 按章分了子目录（体液调节/神经调节/…），必须递归：
+    # 只扫一层会安静地读到 0 张卡，队列里每条错的 point 都变成空标题。
+    for dirpath, dirnames, filenames in os.walk(points_dir):
+        dirnames.sort()
+        for name in sorted(filenames):
+            if not name.endswith(".md"):
+                continue
+            full = os.path.join(dirpath, name)
+            try:
+                with open(full, encoding="utf-8") as fh:
+                    meta, _ = parse_front_matter(fh.read())
+            except Exception as exc:
+                warn("unreadable point %s: %s" % (os.path.relpath(full, points_dir), exc))
+                continue
+            titles[meta.get("id") or os.path.splitext(name)[0]] = meta.get("title", "")
     return titles
 
 
@@ -162,21 +167,26 @@ def load_errors(errors_dir):
     records = []
     if not os.path.isdir(errors_dir):
         return records
-    for name in sorted(os.listdir(errors_dir)):
-        if not name.endswith(".md"):
-            continue
-        try:
-            with open(os.path.join(errors_dir, name), encoding="utf-8") as fh:
-                meta, body = parse_front_matter(fh.read())
-        except Exception as exc:
-            warn("unreadable error %s: %s" % (name, exc))
-            continue
-        meta["_file"] = name
-        meta["_title"] = first_heading(body)
-        meta["_due"] = parse_date(meta.get("next_review"))
-        if meta["_due"] is None:
-            warn("BAD DATE %s: next_review=`%s`" % (name, meta.get("next_review", "")))
-        records.append(meta)
+    # errors/ 允许分子目录，所以递归扫描；只扫一层会静默读到 0 条。
+    for dirpath, dirnames, filenames in os.walk(errors_dir):
+        dirnames.sort()
+        for name in sorted(filenames):
+            if not name.endswith(".md"):
+                continue
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, errors_dir)
+            try:
+                with open(full, encoding="utf-8") as fh:
+                    meta, body = parse_front_matter(fh.read())
+            except Exception as exc:
+                warn("unreadable error %s: %s" % (rel, exc))
+                continue
+            meta["_file"] = rel
+            meta["_title"] = first_heading(body)
+            meta["_due"] = parse_date(meta.get("next_review"))
+            if meta["_due"] is None:
+                warn("BAD DATE %s: next_review=`%s`" % (rel, meta.get("next_review", "")))
+            records.append(meta)
     return records
 
 

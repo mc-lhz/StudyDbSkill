@@ -68,6 +68,26 @@ def make_record(root, name, **over):
         fh.write(body)
 
 
+def make_point(root, chapter, name, title, kind="概念"):
+    """Write a knowledge-point card into a chapter subfolder."""
+    folder = os.path.join(root, "data", "subjects", "生物", "points", chapter)
+    os.makedirs(folder, exist_ok=True)
+    body = "\n".join([
+        "---",
+        "id: %s" % os.path.splitext(name)[0],
+        "title: %s" % title,
+        "kind: %s" % kind,
+        "created: 2026-10-16",
+        "updated: 2026-10-16",
+        "---",
+        "",
+        "## 一句话",
+        "x",
+    ])
+    with io.open(os.path.join(folder, name), "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(body)
+
+
 def fresh_vault():
     root = tempfile.mkdtemp(prefix="biovault-test-")
     for sub in ("errors", "points", "exams"):
@@ -221,11 +241,28 @@ def test_no_data_root():
     check("反向用例 数据根不可解析 → 退出码 6", code == 6, "code=%s" % code)
 
 
+def test_nested_point_titles():
+    """REGRESSION: points/ 按章分子目录时，point_title 仍要解析出来。
+
+    真实数据仓就是 points/神经调节/KP-*.md 这种结构。曾经的 bug：
+    load_points 只扫一层，17 张卡全读成 0 张，每条错的 point_title
+    都是空串——而输出看起来完全正常，没有任何报错。
+    """
+    with vault({"BIO-20261013-001.md": {"verified": "false",
+                                        "point_ref": "KP-NESTED-01"}}) as root:
+        make_point(root, "神经调节", "KP-NESTED-01.md", "嵌套章节里的点")
+        _, data = run_json([])
+        titles = [item["point_title"] for item in data["pending"]]
+        check("嵌套子目录的知识点标题可解析",
+              titles == ["嵌套章节里的点"], str(titles))
+
+
 def main():
     for fn in (test_verified_gate, test_verified_included, test_graduated_leaves_queue,
                test_future_not_due, test_score_formula, test_value_ordering,
                test_bom_tolerated, test_bad_date_flagged_not_crashed,
-               test_empty_queue_is_success, test_no_data_root):
+               test_empty_queue_is_success, test_no_data_root,
+               test_nested_point_titles):
         fn()
     print("")
     if FAILURES:

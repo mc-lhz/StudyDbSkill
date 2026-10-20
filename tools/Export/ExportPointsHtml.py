@@ -41,6 +41,13 @@ def resolve_points_dir():
 
 
 def parse_front_matter(text):
+    """Minimal YAML-subset parser, BOM-stripping included.
+
+    A BOM'd file would otherwise parse as "no front matter" and every card
+    would render with empty fields instead of failing loudly.
+    """
+    if text.startswith("\ufeff"):
+        text = text[1:]
     if not text.startswith("---"):
         return {}, text
     end = text.find("\n---", 3)
@@ -249,12 +256,19 @@ def main():
     out_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_OUT
     pts = resolve_points_dir()
     cards = []
-    for name in sorted(os.listdir(pts)):
-        if not (name.endswith(".md") and name.startswith("KP-")):
-            continue
-        with io.open(os.path.join(pts, name), encoding="utf-8") as fh:
-            meta, body = parse_front_matter(fh.read())
-        cards.append((meta, body))
+    # 递归：points/ 按章分了子目录。只扫一层会渲染出 0 张卡的空页面，
+    # 看起来像「还没有知识点」，其实是扫描漏了。
+    for dirpath, dirnames, filenames in os.walk(pts):
+        dirnames.sort()
+        for name in sorted(filenames):
+            if not (name.endswith(".md") and name.startswith("KP-")):
+                continue
+            with io.open(os.path.join(dirpath, name), encoding="utf-8") as fh:
+                meta, body = parse_front_matter(fh.read())
+            cards.append((meta, body))
+
+    if not cards:
+        sys.stderr.write("WARNING: no KP-*.md under %s (searched recursively)\n" % pts)
 
     chapters, kinds = [], []
     for meta, _ in cards:
