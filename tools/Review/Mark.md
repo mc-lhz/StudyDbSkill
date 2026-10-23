@@ -46,8 +46,12 @@
 
 ## 对应数据
 
-`<数据根>/data/subjects/生物/errors/*.md` —— 按 front-matter 的 `id` 定位
-（缺失时回落到文件名）。**只写这一个目录。**
+`<数据根>/data/subjects/生物/points/<章>/KP-*.md` —— 按 front-matter 的 `id` 定位
+（缺失时回落到文件名），递归扫描子目录。**只写这一个目录。**
+
+schema 1.13 起没有 `errors/` 了：复习状态（`status` / `review_count` /
+`last_review` / `next_review`）挂在知识点卡自己身上。一张卡可能挂多条错题证据，
+但**复习状态是整卡共享的**——你复习的是这个知识点，不是那一道题。
 
 ## 方法清单
 
@@ -57,7 +61,8 @@
 | `patch_front_matter` | 逐行替换指定 key，其余原样 |
 | `read_text` / `write_text` | 记住并还原换行风格，避免整文件 diff |
 | `apply_one` | 写 → **回读校验** → 不一致就抛 |
-| `index_records` | `id → (path, meta)` |
+| `index_records` | 递归扫 `points/<章>/`，`id → (path, meta)` |
+| `detect_cause` | 错因不在 front-matter，从 `## 错题证据` 的「错因：」行读取；多块时 会但粗心 优先 |
 
 ## 最小用法
 
@@ -93,5 +98,6 @@ python tools/Review/Mark.py <id> --result right --yes --json
 
 - **写完一定要回读校验**：本工具改的是你的学习数据，静默写歪比报错糟得多
 - **不要因为想清空队列就狂点 `--result right`**：那等于自欺，间隔重复的前提是结果真实
+- **错因从证据块读**：卡里没有 `cause` 字段时，`会但粗心` 守卫靠 `## 错题证据` 里的「错因：」行生效；把那一行删了，守卫就静默失效
 - 与 `Queue.py` 的分工：`Queue.py` 只读、永不写；`Mark.py` 只写、不排序
 - 测试见 `tools/TestCases/TestMark.py`，含 3 条反向用例 + 变异测试验证过会红

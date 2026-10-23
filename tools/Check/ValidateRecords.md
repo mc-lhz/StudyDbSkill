@@ -19,8 +19,8 @@
 
 | 路径 | 用途 |
 |---|---|
-| `<数据根>/data/subjects/生物/errors/**/*.md` | 错题记录（**递归**，允许按章分子目录） |
-| `<数据根>/data/subjects/生物/points/**/*.md` | 知识点卡（**递归**，实际按 神经调节 / 体液调节 / 内环境与稳态 分子目录） |
+| `<数据根>/data/subjects/生物/points/**/*.md` | 知识资产库（**递归**，按 神经调节 / 体液调节 / 内环境与稳态 分子目录） |
+| `<数据根>/data/subjects/生物/errors/` | **已取消**（schema 1.13）。若还有文件，只报一条旧 schema 残留警告 |
 | `<数据根>/data/subjects/生物/exams/*.md` | 考试档案（只计数） |
 | `reference/taxonomy.md` | 章节树真源（5 章 18 节） |
 | `reference/causes.md` | 11 个错因 |
@@ -39,16 +39,17 @@
 | `enum_from_table` | 从 `reference/*.md` 的表格里取某一列，枚举只有这一个真源 |
 | `load_enums` | 一次性加载四份真源 |
 | `check_enum` | 枚举外 → problem，兜底规则 → 附警告 |
-| `validate_error` / `validate_point` | 按 `ERROR_REQUIRED` / `POINT_REQUIRED` 与区段表逐条查 |
+| `evidence_section` | 切出 `## 错题证据` 区段 |
+| `validate_point` | 卡字段 + 区段 + 复习字段 + **每条证据块的错因/错解/教训** |
 | `scan_sensitive` | 全仓文本扫 `SENSITIVE` 黑名单 |
 
 ## 必填字段
 
 ```
-错题：id subject exam date chapter point qtype cause value status
-      first_wrong last_review review_count next_review verified
-错题正文区段：## 我的错解 / ## 正解思路 / ## 一句话教训 / ## 这题的价值
-知识点：id title kind created updated
+卡：id title kind created updated status review_count next_review verified
+卡正文区段：按 kind 见 reference/kinds.md（至少 `## 一句话`）
+证据块：`### <题号> · <考试>` 下必须有 错因 / 我的错解 / 教训，
+        且 错因 必须在 reference/causes.md 的 11 个枚举里
 ```
 
 ## 最小用法

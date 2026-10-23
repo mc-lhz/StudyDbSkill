@@ -191,24 +191,49 @@ def plan(meta, result, today):
         (today + datetime.timedelta(days=days)).isoformat(), note)
 
 
-def index_records(errors_dir):
-    """id -> (path, meta). id comes from front-matter, falling back to filename."""
+EVIDENCE_CAUSE = re.compile(r"^\s*-\s*错因[:：]\s*([^｜|]+)", re.M)
+
+
+def detect_cause(body, meta):
+    """错因写在证据块里，不在 front-matter（schema 1.13）。
+
+    多块证据取最严格的一条：只要有「会但粗心」，整张卡就受守卫约束。
+    """
+    if meta.get("cause"):
+        return meta["cause"]
+    match = re.search(r"^## 错题证据\s*$(.*?)(?=^## |\Z)", body, re.S | re.M)
+    causes = [c.strip() for c in EVIDENCE_CAUSE.findall(match.group(1) if match else "")]
+    if "会但粗心" in causes:
+        return "会但粗心"
+    return causes[0] if causes else ""
+
+
+def index_records(points_dir):
+    """id -> (path, meta). id comes from front-matter, falling back to filename.
+
+    Schema 1.13：复习单元是 points/<章>/KP-*.md（知识点卡），
+    不再是已经取消的 errors/。递归扫描，子目录是章的归属。
+    """
     found = {}
-    if not os.path.isdir(errors_dir):
+    if not os.path.isdir(points_dir):
         return found
-    for name in sorted(os.listdir(errors_dir)):
-        if not name.endswith(".md"):
-            continue
-        path = os.path.join(errors_dir, name)
-        try:
-            text, _ = read_text(path)
-        except Exception as exc:
-            warn("unreadable %s: %s" % (name, exc))
-            continue
-        meta, _ = parse_front_matter(text)
-        key = meta.get("id") or os.path.splitext(name)[0]
-        found[key] = (path, meta)
-        found.setdefault(os.path.splitext(name)[0], (path, meta))
+    for dirpath, dirnames, filenames in os.walk(points_dir):
+        dirnames.sort()
+        for name in sorted(filenames):
+            if not name.endswith(".md"):
+                continue
+            path = os.path.join(dirpath, name)
+            rel = os.path.relpath(path, points_dir)
+            try:
+                text, _ = read_text(path)
+            except Exception as exc:
+                warn("unreadable %s: %s" % (rel, exc))
+                continue
+            meta, body = parse_front_matter(text)
+            meta["cause"] = detect_cause(body, meta)
+            key = meta.get("id") or os.path.splitext(name)[0]
+            found[key] = (path, meta)
+            found.setdefault(os.path.splitext(name)[0], (path, meta))
     return found
 
 
@@ -263,8 +288,11 @@ def main(argv=None):
             warn("--date 格式必须是 YYYY-MM-DD，收到 `%s`" % args.date)
             return EXIT_ARGS
 
-    errors_dir = os.path.join(data_root, "data", "subjects", "生物", "errors")
-    records = index_records(errors_dir)
+    points_dir = os.path.join(data_root, "data", "subjects", "生物", "points")
+    records = index_records(points_dir)
+    if not records:
+        out("points/ 下一页卡都没读到：检查 BIOVAULT_HOME 与 points/<章>/KP-*.md")
+        return EXIT_NO_DATA
 
     plans, errors = [], []
     for rid in args.ids:

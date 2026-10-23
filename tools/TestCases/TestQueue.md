@@ -6,9 +6,9 @@
 
 ## 对应数据
 
-无。`make_record` / `vault` 在临时目录造记录，`TODAY` 固定 `2026-10-19`。
+无。`make_record` / `vault` 在临时目录造卡片（`points/<章>/KP-*.md`），`TODAY` 固定 `2026-10-19`。
 
-## 覆盖的 10 条
+## 覆盖的 12 条
 
 | 用例 | 钉住的行为 |
 |---|---|
@@ -20,8 +20,10 @@
 | `test_value_ordering` | 同逾期天数时高价值排前面 |
 | `test_bom_tolerated` | 带 BOM 的记录照样解析出日期 |
 | `test_bad_date_flagged_not_crashed` | 坏日期**报出来**而不是静默丢弃或崩 |
-| `test_empty_queue_is_success` | 空队列退出 `0`（空是状态，不是错误） |
+| `test_empty_queue_is_success` | 空队列退出 `0`，且文本说清「没读到卡」 |
 | `test_no_data_root` | 数据根不可解析时退出 `6` |
+| `test_cards_in_chapter_subdirs` | 卡在 `points/<章>/` 子目录里也不会被扫漏 |
+| `test_cause_from_evidence` | 错因从 `## 错题证据` 读出来（`会但粗心` 可识别） |
 
 ## 最小用法
 

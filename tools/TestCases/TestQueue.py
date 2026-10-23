@@ -32,19 +32,22 @@ TODAY = "2026-10-19"
 FAILURES = []
 
 
+CARD_CAUSE = "概念混淆"
+
+
 def make_record(root, name, **over):
-    """Write a minimal but schema-shaped error record."""
+    """Write a minimal but schema-shaped knowledge card (schema 1.13).
+
+    卡住在 points/<章>/, 错题证据挂在 `## 错题证据` 下——没有独立的 errors/。
+    """
+    chapter = over.pop("chapter", "神经调节")
     fields = {
         "id": os.path.splitext(name)[0],
-        "subject": "生物",
-        "exam": "BIO-20261013-01",
-        "date": "2026-10-13",
-        "chapter": "神经调节",
+        "title": "合成知识点 %s" % os.path.splitext(name)[0],
+        "kind": "概念",
+        "chapter": chapter,
         "point": "神经冲动的产生和传导",
-        "qtype": "选择题",
-        "cause": "概念混淆",
         "value": "高",
-        "difficulty": "中",
         "status": "新错",
         "first_wrong": "2026-10-13",
         "last_review": "2026-10-13",
@@ -58,39 +61,30 @@ def make_record(root, name, **over):
         "\n".join("%s: %s" % (k, v) for k, v in fields.items()),
         "---",
         "",
-        "# 合成错题 %s" % fields["id"],
-        "",
-        "## 我的错解", "x", "## 正解思路", "y",
-        "## 一句话教训", "z", "## 这题的价值", "%s。" % fields["value"],
-    ])
-    with io.open(os.path.join(root, "data", "subjects", "生物", "errors", name),
-                 "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(body)
-
-
-def make_point(root, chapter, name, title, kind="概念"):
-    """Write a knowledge-point card into a chapter subfolder."""
-    folder = os.path.join(root, "data", "subjects", "生物", "points", chapter)
-    os.makedirs(folder, exist_ok=True)
-    body = "\n".join([
-        "---",
-        "id: %s" % os.path.splitext(name)[0],
-        "title: %s" % title,
-        "kind: %s" % kind,
-        "created: 2026-10-16",
-        "updated: 2026-10-16",
-        "---",
+        "# %s" % fields["title"],
         "",
         "## 一句话",
-        "x",
+        "合成知识点。",
+        "",
+        "## 错题证据",
+        "",
+        "### 一.1 · 2026-10-13 月考",
+        "- 错因：%s ｜ 规范：要点答全 ｜ 重要度：%s" % (CARD_CAUSE, fields["value"]),
+        "- 我的错解：x",
+        "- 教训：y",
+        "",
     ])
-    with io.open(os.path.join(folder, name), "w", encoding="utf-8", newline="\n") as fh:
+    folder = os.path.join(root, "data", "subjects", "生物", "points", chapter)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, name)
+    with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(body)
+    return path
 
 
 def fresh_vault():
     root = tempfile.mkdtemp(prefix="biovault-test-")
-    for sub in ("errors", "points", "exams"):
+    for sub in ("points", "exams"):
         os.makedirs(os.path.join(root, "data", "subjects", "生物", sub))
     return root
 
@@ -102,9 +96,8 @@ def vault(records=None, bom=False):
     os.environ["BIOVAULT_HOME"] = root
     try:
         for name, over in (records or {}).items():
-            make_record(root, name, **over)
+            path = make_record(root, name, **over)
             if bom:
-                path = os.path.join(root, "data", "subjects", "生物", "errors", name)
                 with io.open(path, encoding="utf-8") as fh:
                     text = fh.read()
                 with io.open(path, "w", encoding="utf-8-sig", newline="\n") as fh:
@@ -224,7 +217,8 @@ def test_empty_queue_is_success():
     with vault({}):
         code, text = run(["--today", TODAY])
         check("空队列退出码为 0（空是状态不是错误）", code == 0, "code=%s" % code)
-        check("空队列文本不谎称「没事做」", "复核" in text or "确实是空的" in text)
+        check("空队列文本说清「没读到卡」而不是谎称没事做",
+              "没读到" in text or "一张卡" in text, text[:80])
 
 
 def test_no_data_root():
@@ -241,20 +235,41 @@ def test_no_data_root():
     check("反向用例 数据根不可解析 → 退出码 6", code == 6, "code=%s" % code)
 
 
-def test_nested_point_titles():
-    """REGRESSION: points/ 按章分子目录时，point_title 仍要解析出来。
+def test_cards_in_chapter_subdirs():
+    """REGRESSION: 卡在 points/<章>/ 子目录里，不能被扫漏。
 
-    真实数据仓就是 points/神经调节/KP-*.md 这种结构。曾经的 bug：
-    load_points 只扫一层，17 张卡全读成 0 张，每条错的 point_title
-    都是空串——而输出看起来完全正常，没有任何报错。
+    真实数据仓就是 points/神经调节/KP-*.md。曾经的 bug：只扫一层，
+    19 张卡读成 0 张，队列安静地空着，还宣称「队列确实是空的」。
     """
-    with vault({"BIO-20261013-001.md": {"verified": "false",
-                                        "point_ref": "KP-NESTED-01"}}) as root:
-        make_point(root, "神经调节", "KP-NESTED-01.md", "嵌套章节里的点")
+    with vault({
+        "KP-A.md": {"chapter": "神经调节", "verified": "false"},
+        "KP-B.md": {"chapter": "体液调节", "verified": "false"},
+    }):
         _, data = run_json([])
-        titles = [item["point_title"] for item in data["pending"]]
-        check("嵌套子目录的知识点标题可解析",
-              titles == ["嵌套章节里的点"], str(titles))
+        check("章子目录里的卡全部被扫到", data["counts"]["pending"] == 2,
+              str(data["counts"]))
+        check("卡标题回落到 front-matter 的 title",
+              all(item["point_title"].startswith("合成知识点") for item in data["pending"]),
+              str([i["point_title"] for i in data["pending"]]))
+
+
+def test_cause_from_evidence():
+    """错因现在写在 `## 错题证据` 里；会但粗心 必须能被识别出来。
+
+    这条是 Mark.py 守卫的前置条件：读不出错因，守卫就形同虚设。
+    """
+    with vault({"KP-C.md": {"verified": "true"}}) as root:
+        path = os.path.join(root, "data", "subjects", "生物", "points",
+                            "神经调节", "KP-C.md")
+        with io.open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        text = text.replace("错因：概念混淆", "错因：会但粗心")
+        with io.open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        _, data = run_json([])
+        check("证据块里的错因被读出（会但粗心）",
+              data["review"] and data["review"][0]["cause"] == "会但粗心",
+              str([r["cause"] for r in data["review"]]))
 
 
 def main():
@@ -262,7 +277,7 @@ def main():
                test_future_not_due, test_score_formula, test_value_ordering,
                test_bom_tolerated, test_bad_date_flagged_not_crashed,
                test_empty_queue_is_success, test_no_data_root,
-               test_nested_point_titles):
+               test_cards_in_chapter_subdirs, test_cause_from_evidence):
         fn()
     print("")
     if FAILURES:

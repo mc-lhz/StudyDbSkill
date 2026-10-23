@@ -7,7 +7,7 @@
 ```
 工具层  tools/BioErrorVault.py 门面  数据根解析 · schema 读写 · 枚举校验
            ↓
-真源层  data/exams/  errors/  points/  assets/     ← git 逐行追踪 diff，人和 AI 只改这里
+真源层  data/exams/  points/  assets/     ← git 逐行追踪 diff，人和 AI 只改这里
            ↓ RebuildIndexes.py 全量重建
 派生层  data/indexes/  point-map · weak-spots · orphan-points · queue · glossary
 ```
@@ -67,7 +67,10 @@ examples/                虚构夹具
 
 ## 数据契约
 
-### 错题 24 字段 / 知识点 11 字段
+### 知识卡 1 种文件（schema 1.13）
+
+**`errors/` 已取消**：错题作为 `## 错题证据` 挂在知识点卡上，不再单独成文件。
+一张卡 = 一个知识点 + 若干条证据，**卡就是复习单元**（复习状态挂整卡）。
 
 schema 见 `SKILL.md`。**改动 schema 必须三处同步**：`SKILL.md`、`reference/` 相应真源、
 `TestCases/TestSchema.py` 的断言。
@@ -76,7 +79,7 @@ schema 见 `SKILL.md`。**改动 schema 必须三处同步**：`SKILL.md`、`ref
 
 | 文件 | 内容 | 校验 |
 |---|---|---|
-| `reference/taxonomy.md` | 教材树 5 章 18 节，**两层封顶** | `chapter` + `point` 必填于错题 |
+| `reference/taxonomy.md` | 教材树 5 章 18 节，**两层封顶** | 卡的 `chapter` + `point` 必填 |
 | `reference/causes.md` | 11 个错因 | `cause` 必填，枚举外 → 退出码 4 |
 | `reference/kinds.md` | 8 种知识点类型 | `kind` 必填，枚举外 → 退出码 4 |
 
@@ -85,10 +88,10 @@ schema 见 `SKILL.md`。**改动 schema 必须三处同步**：`SKILL.md`、`ref
 
 ### 归属规则
 
-- 错题：`chapter` / `point` **必填**（不归位则统计失去意义）
-- 知识点：`chapter` / `point` **可选**，但**不绑时 `tags` 必填 ≥1**，
-  否则计入「无归属知识点」，`Health.py` 告警
-  ——**兜底规则必须存在**，否则「可绑可不绑」会退化成「谁也不绑」
+- 卡：`chapter` / `point` **必填**（不归位则统计失去意义），
+  且 `chapter` 必须与卡片所在 `points/<章>/` 文件夹一致
+- 证据块：`错因` 必填且命中 `causes.md`；`我的错解` 与 `教训` 缺一即校验失败
+- `tags` 只作补充检索，**不能用来替代章节归属**
 
 ### 状态机
 

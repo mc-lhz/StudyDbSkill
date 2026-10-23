@@ -34,15 +34,11 @@ def body_for(record_id, value="高"):
     return CRLF.join([
         "---",
         "id: %s" % record_id,
-        "subject: 生物",
-        "exam: BIO-20261013-01",
-        "date: 2026-10-13",
+        "title: 合成知识点 %s" % record_id,
+        "kind: 概念",
         "chapter: 神经调节",
         "point: 神经冲动的产生和传导",
-        "qtype: 选择题",
-        "cause: concept" if False else "cause: 概念混淆",
         "value: %s" % value,
-        "difficulty: 中",
         "status: {status}",
         "first_wrong: 2026-10-13",
         "last_review: 2026-10-13",
@@ -51,24 +47,31 @@ def body_for(record_id, value="高"):
         "verified: {verified}",
         "---",
         "",
-        "# Q1 合成错题",
+        "# 合成知识点",
         "",
-        "## 我的错解", "第一行正文。", "第二行正文 —— 必须原样保留。",
-        "## 正解思路", "x",
-        "## 一句话教训", "y",
-        "## 这题的价值", "%s。" % value,
+        "## 一句话",
+        "第一行正文。",
+        "第二行正文 —— 必须原样保留。",
+        "",
+        "## 错题证据",
+        "",
+        "### 一.1 · 2026-10-13 月考",
+        "- 错因：{cause} ｜ 规范：要点答全 ｜ 重要度：%s" % value,
+        "- 我的错解：x",
+        "- 教训：y",
         "",
     ])
 
 
 def write_record(root, record_id, status="新错", count=0, due="2026-10-14",
                  verified="true", cause="概念混淆", value="高"):
-    path = os.path.join(root, "data", "subjects", "生物", "errors",
-                        "%s.md" % record_id)
+    card_dir = os.path.join(root, "data", "subjects", "生物", "points", "神经调节")
+    os.makedirs(card_dir, exist_ok=True)
+    path = os.path.join(card_dir, "%s.md" % record_id)
     text = (body_for(record_id, value)
             .replace("{status}", status).replace("{count}", str(count))
             .replace("{due}", due).replace("{verified}", verified)
-            .replace("cause: 概念混淆", "cause: %s" % cause))
+            .replace("{cause}", cause))
     with io.open(path, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
     return path
@@ -217,8 +220,8 @@ def test_newline_and_body_preserved():
         after = read(path)
         check("写回后仍是 CRLF", "\r\n" in after and "\n" not in after.replace("\r\n", ""))
         check("正文两行原样保留", "第二行正文 —— 必须原样保留。" in after)
-        before_body = before.split("## 我的错解", 1)[1]
-        after_body = after.split("## 我的错解", 1)[1]
+        before_body = before.split("## 一句话", 1)[1]
+        after_body = after.split("## 一句话", 1)[1]
         check("正文逐字节不变", before_body == after_body)
 
 

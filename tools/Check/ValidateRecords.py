@@ -4,9 +4,11 @@
 Checks, in order of severity:
 
   1. enum hits      chapter/point vs taxonomy, cause vs causes.md,
-                    kind vs kinds.md, norm vs norms.md
-  2. required body  4 sections on errors, kind-specific sections on points
-  3. field shape    required fields present, types parse, value in 高/中/低
+                    kind vs kinds.md, 规范 vs norms.md
+  2. required body  kind-specific sections on the card, plus 错因 / 我的错解 /
+                    教训 on every `## 错题证据` block (schema 1.13)
+  3. field shape    required fields present, types parse, value in 高/中/低,
+                    next_review looks like YYYY-MM-DD
   4. reverse gate   NO sensitive strings in the data repo  (see below)
 
 The reverse gate is the important one. Every other check can be satisfied by
@@ -29,11 +31,11 @@ EXIT_SHAPE = 2
 EXIT_NO_DATA = 6
 EXIT_SENSITIVE = 5
 
-ERROR_SECTIONS = ["## 我的错解", "## 正解思路", "## 一句话教训", "## 这题的价值"]
-ERROR_REQUIRED = ["id", "subject", "exam", "date", "chapter", "point",
-                  "qtype", "cause", "value", "status", "first_wrong",
-                  "last_review", "review_count", "next_review", "verified"]
-POINT_REQUIRED = ["id", "title", "kind", "created", "updated"]
+# schema 1.13：错题不再单独成文件，证据挂在知识点卡的 `## 错题证据` 下。
+# 复习状态因此也落在卡上，缺了就无法排期。
+POINT_REQUIRED = ["id", "title", "kind", "created", "updated",
+                  "status", "review_count", "next_review", "verified"]
+EVIDENCE_REQUIRED = ("错因", "我的错解", "教训")
 VALUES = ["高", "中", "低"]
 QTYPES = ["选择题", "多选题", "填空", "图表分析", "实验设计", "简答", "计算", "其他"]
 STATUSES = ["新错", "已订正", "已复现", "已掌握"]
@@ -171,42 +173,9 @@ def check_enum(kind, value, allowed, path, problems, warnings):
         problems.append("%s: %s `%s` not in enum" % (path, kind, head))
 
 
-def validate_error(path, text, enums, problems, warnings):
-    meta, body = parse_front_matter(text)
-    for field in ERROR_REQUIRED:
-        if field not in meta:
-            problems.append("%s: missing field `%s`" % (path, field))
-    check_enum("chapters", meta.get("chapter", ""), enums["chapters"], path, problems, warnings)
-    check_enum("sections", meta.get("point", ""), enums["sections"], path, problems, warnings)
-    check_enum("causes", meta.get("cause", ""), enums["causes"], path, problems, warnings)
-    norm = meta.get("norm")
-    if norm:
-        check_enum("norms", norm, enums["norms"], path, problems, warnings)
-    if meta.get("value") and meta["value"] not in VALUES:
-        problems.append("%s: value `%s` not in 高/中/低" % (path, meta["value"]))
-    if meta.get("qtype") and meta["qtype"] not in QTYPES:
-        problems.append("%s: qtype `%s` not in enum" % (path, meta["qtype"]))
-    if meta.get("status") and meta["status"] not in STATUSES:
-        problems.append("%s: status `%s` not in enum" % (path, meta["status"]))
-    if meta.get("difficulty") and meta["difficulty"] not in DIFFICULTIES:
-        problems.append("%s: difficulty `%s` not in enum" % (path, meta["difficulty"]))
-    if meta.get("verified") not in ("true", "false"):
-        problems.append("%s: verified must be true/false, got `%s`"
-                        % (path, meta.get("verified")))
-    for section in ERROR_SECTIONS:
-        if section not in body:
-            problems.append("%s: missing body section `%s`" % (path, section))
-    # 双向一致：front-matter 的 value 必须能在正文里找到理由
-    if meta.get("value") and "## 这题的价值" in body:
-        tail = body.split("## 这题的价值", 1)[1]
-        if meta["value"] not in tail:
-            warnings.append("%s: value=%s but not stated in `## 这题的价值`"
-                            % (path, meta["value"]))
-    # point_ref 可空；有值时只校验形状（KP-YYYYMMDD-NNN），指向存在性由 RebuildIndexes 负责
-    point_ref = meta.get("point_ref")
-    if point_ref and not re.match(r"^KP-\d{8}-\d{2}$", point_ref):
-        problems.append("%s: point_ref `%s` malformed, want KP-YYYYMMDD-NN"
-                        % (path, point_ref))
+def evidence_section(body):
+    match = re.search(r"^## 错题证据\s*$(.*?)(?=^## |\Z)", body, re.S | re.M)
+    return match.group(1) if match else ""
 
 
 def validate_point(path, text, enums, problems, warnings):
@@ -226,6 +195,39 @@ def validate_point(path, text, enums, problems, warnings):
     for section in POINT_SECTIONS.get(kind, ["## 一句话"]):
         if section not in body:
             problems.append("%s: kind=%s missing section `%s`" % (path, kind, section))
+
+    if meta.get("status") and meta["status"] not in STATUSES:
+        problems.append("%s: status `%s` not in enum" % (path, meta["status"]))
+    if meta.get("value") and meta["value"] not in VALUES:
+        problems.append("%s: value `%s` not in 高/中/低" % (path, meta["value"]))
+    if meta.get("verified") not in ("true", "false"):
+        problems.append("%s: verified must be true/false, got `%s`"
+                        % (path, meta.get("verified")))
+    due = meta.get("next_review")
+    if due and not re.match(r"^\d{4}-\d{2}-\d{2}$", due):
+        problems.append("%s: next_review `%s` is not YYYY-MM-DD" % (path, due))
+
+    # 证据块：每块都必须能读出错因、错解、教训 —— 否则复习时无据可依
+    section = evidence_section(body)
+    blocks = [b.strip() for b in re.split(r"^### ", section, flags=re.M) if b.strip()]
+    if section and not blocks:
+        warnings.append("%s: `## 错题证据` 是空的" % path)
+    for block in blocks:
+        head = block.splitlines()[0].strip()
+        for need in EVIDENCE_REQUIRED:
+            if need not in block:
+                problems.append("%s: 证据块「%s」缺 `%s`" % (path, head, need))
+        cause = re.search(r"错因[:：]\s*([^｜|]+)", block)
+        if not cause:
+            problems.append("%s: 证据块「%s」没有可解析的错因" % (path, head))
+        else:
+            check_enum("causes", cause.group(1).strip(), enums["causes"],
+                       path, problems, warnings)
+        norm = re.search(r"规范[:：]\s*([^｜|]+)", block)
+        if norm:
+            value = norm.group(1).strip()
+            if value not in ("", "—", "-"):
+                check_enum("norms", value, enums["norms"], path, problems, warnings)
 
 
 def scan_sensitive(data_root, problems):
@@ -260,16 +262,12 @@ def main():
     problems, warnings = [], []
     subject = os.path.join(data_root, "data", "subjects", "生物")
 
-    counts = {"errors": 0, "points": 0, "exams": 0}
-    for kind, folder, fn in (("errors", "errors", validate_error),
-                             ("points", "points", validate_point)):
-        folder_path = os.path.join(subject, kind)
-        if not os.path.isdir(folder_path):
-            warnings.append("missing %s/ -- 目录不存在，跳过了这一层校验"
-                            % os.path.relpath(folder_path, subject))
-            continue
-        # 递归扫描：points/ 按章分了子目录（体液调节/神经调节/…）。
-        # 只扫一层会把 17 张卡读成 0 张，还照样 RESULT: OK —— 沉默的谎。
+    counts = {"points": 0, "exams": 0}
+    # 递归扫描：卡按章放在 points/<章>/ 下，只扫一层会读成 0 张还报 OK。
+    folder_path = os.path.join(subject, "points")
+    if not os.path.isdir(folder_path):
+        warnings.append("missing points/ -- 没有知识资产库可校验")
+    else:
         for dirpath, dirnames, filenames in os.walk(folder_path):
             dirnames.sort()
             for name in sorted(filenames):
@@ -277,12 +275,19 @@ def main():
                     continue
                 full = os.path.join(dirpath, name)
                 with open(full, encoding="utf-8") as fh:
-                    fn(os.path.relpath(full, subject), fh.read(), enums, problems, warnings)
-                counts[kind] += 1
-        if counts[kind] == 0:
-            warnings.append(
-                "no records under %s/ -- 目录存在但一条都没读到，先确认目录结构"
-                % os.path.relpath(folder_path, subject))
+                    validate_point(os.path.relpath(full, subject), fh.read(),
+                                   enums, problems, warnings)
+                counts["points"] += 1
+        if counts["points"] == 0:
+            warnings.append("points/ 存在但一张卡都没读到，先确认目录结构")
+
+    legacy = os.path.join(subject, "errors")
+    if os.path.isdir(legacy):
+        stale = [n for n in os.listdir(legacy) if n.endswith(".md")]
+        if stale:
+            warnings.append("旧 schema：errors/ 还有 %d 个文件；1.13 已改为"
+                            "并入 points/<章>/KP-*.md，这些文件不会被校验"
+                            % len(stale))
 
     exams_path = os.path.join(subject, "exams")
     if os.path.isdir(exams_path):
@@ -290,8 +295,7 @@ def main():
 
     scan_sensitive(data_root, problems)
 
-    out("checked: %d errors, %d points, %d exams"
-        % (counts["errors"], counts["points"], counts["exams"]))
+    out("checked: %d cards, %d exams" % (counts["points"], counts["exams"]))
     for w in warnings:
         out("WARN  %s" % w)
     for p in problems:

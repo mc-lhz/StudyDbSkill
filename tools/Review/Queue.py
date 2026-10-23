@@ -133,57 +133,61 @@ def parse_date(value):
         return None
 
 
-def load_points(points_dir):
-    """id -> title, so each error can name the knowledge it points at.
+EVIDENCE_CAUSE = re.compile(r"^\s*-\s*错因[:：]\s*([^｜|]+)", re.M)
 
-    决策 1.0：错题是证据，知识点是资产。队列里带上知识点标题，
-    复习时看到的才是「病灶」而不是「症状」。
+
+def evidence_section(body):
+    """Return the `## 错题证据` body, or "" when the card has none."""
+    match = re.search(r"^## 错题证据\s*$(.*?)(?=^## |\Z)", body, re.S | re.M)
+    return match.group(1) if match else ""
+
+
+def evidence_count(body):
+    return len(re.findall(r"^### ", evidence_section(body), re.M))
+
+
+def detect_cause(body, meta):
+    """错因现在写在证据块里，不在 front-matter。
+
+    多块证据时取最严格的那个：只要有一条是「会但粗心」，整张卡就按
+    「会但粗心」守卫，别让一条宽松的记录把它冲掉。
     """
-    titles = {}
+    if meta.get("cause"):
+        return meta["cause"]
+    causes = [c.strip() for c in EVIDENCE_CAUSE.findall(evidence_section(body))]
+    if "会但粗心" in causes:
+        return "会但粗心"
+    return causes[0] if causes else ""
+
+
+def load_cards(points_dir):
+    """Read every knowledge card under points/ (recursive).
+
+    Schema 1.13：一张卡 = 知识点 + 挂在 `## 错题证据` 下的错题证据。
+    卡本身就是复习单元，不再有独立的 errors/ —— 错题不单独成文件。
+    满分但考试时犹豫的题也照样挂在这里，所以「有证据」≠「做错过」。
+    """
+    records = []
     if not os.path.isdir(points_dir):
-        return titles
-    # points/ 按章分了子目录（体液调节/神经调节/…），必须递归：
-    # 只扫一层会安静地读到 0 张卡，队列里每条错的 point 都变成空标题。
+        return records
     for dirpath, dirnames, filenames in os.walk(points_dir):
         dirnames.sort()
         for name in sorted(filenames):
             if not name.endswith(".md"):
                 continue
             full = os.path.join(dirpath, name)
-            try:
-                with open(full, encoding="utf-8") as fh:
-                    meta, _ = parse_front_matter(fh.read())
-            except Exception as exc:
-                warn("unreadable point %s: %s" % (os.path.relpath(full, points_dir), exc))
-                continue
-            titles[meta.get("id") or os.path.splitext(name)[0]] = meta.get("title", "")
-    return titles
-
-
-def load_errors(errors_dir):
-    """Read every error record. A record with a broken date is KEPT and
-    flagged, not skipped -- silently dropping it would hide a record the
-    user believes is in the queue (AGENTS.md: 失败绝不当成功)."""
-    records = []
-    if not os.path.isdir(errors_dir):
-        return records
-    # errors/ 允许分子目录，所以递归扫描；只扫一层会静默读到 0 条。
-    for dirpath, dirnames, filenames in os.walk(errors_dir):
-        dirnames.sort()
-        for name in sorted(filenames):
-            if not name.endswith(".md"):
-                continue
-            full = os.path.join(dirpath, name)
-            rel = os.path.relpath(full, errors_dir)
+            rel = os.path.relpath(full, points_dir)
             try:
                 with open(full, encoding="utf-8") as fh:
                     meta, body = parse_front_matter(fh.read())
             except Exception as exc:
-                warn("unreadable error %s: %s" % (rel, exc))
+                warn("unreadable card %s: %s" % (rel, exc))
                 continue
             meta["_file"] = rel
-            meta["_title"] = first_heading(body)
+            meta["_title"] = meta.get("title") or first_heading(body)
             meta["_due"] = parse_date(meta.get("next_review"))
+            meta["_cause"] = detect_cause(body, meta)
+            meta["_evidence"] = evidence_count(body)
             if meta["_due"] is None:
                 warn("BAD DATE %s: next_review=`%s`" % (rel, meta.get("next_review", "")))
             records.append(meta)
@@ -241,7 +245,11 @@ def render_record(rec, today, rank, point_titles, mode="review"):
     if rec.get("_title"):
         lines.append("    题面 " + rec["_title"])
 
-    bits = ["错因 " + (rec.get("cause") or "?")]
+    if rec.get("_evidence"):
+        bits = ["错因 " + (rec.get("_cause") or "?"),
+                "证据 %d 条" % rec["_evidence"]]
+    else:
+        bits = ["纯知识卡（无错题证据）"]
     if rec.get("norm"):
         bits.append("norm " + rec["norm"])
     if rec.get("review_count", "") not in ("", None):
@@ -249,16 +257,16 @@ def render_record(rec, today, rank, point_titles, mode="review"):
     lines.append("    " + " | ".join(bits))
 
     ref = rec.get("point_ref")
-    if ref:
+    if ref and ref != rec.get("id"):
         title = point_titles.get(ref)
         lines.append("    知识点 %s%s" % (ref, "「%s」" % title if title else ""))
 
     # AGENTS.md：会但粗心 不允许一次过 已掌握，强制至少两次间隔。
     # 这里只提示；真正的拦截在 Mark.py 写入时做 —— 提示拦不住人，校验才会。
-    if mode == "review" and rec.get("cause") == "会但粗心":
+    if mode == "review" and rec.get("_cause") == "会但粗心":
         lines.append("    ⚠️ 会但粗心：强制至少两次间隔才能过 已掌握")
 
-    lines.append("    → data/subjects/生物/errors/%s" % rec["_file"])
+    lines.append("    → data/subjects/生物/points/%s" % rec["_file"])
     return "\n".join(lines)
 
 
@@ -308,7 +316,7 @@ def render_pending(pending, today, point_titles, group_by=None):
     return "\n".join(lines)
 
 
-def render_text(review, upcoming, pending, bad, today, args, point_titles):
+def render_text(review, upcoming, pending, bad, today, args, point_titles, total=0):
     if args.pending:
         return render_pending(pending, today, point_titles, args.group)
 
@@ -317,7 +325,11 @@ def render_text(review, upcoming, pending, bad, today, args, point_titles):
     if not review:
         lines.append("到期 0 条。")
         lines.append("")
-        if pending:
+        if not total:
+            # 没读到卡 ≠ 没有要复习的。这两种空必须分开说，否则就是撒谎。
+            lines.append("⚠️ 队列为空的原因是一张卡都没读到：检查 BIOVAULT_HOME，")
+            lines.append("   以及 points/<章>/KP-*.md 是否存在。")
+        elif pending:
             # 最重要的一条分支：空队列不等于没事做
             lines.append("⚠️ 队列为空：%d 条记录全部 verified: false，被硬闸门挡在队列外。"
                          % len(pending))
@@ -384,7 +396,7 @@ def render_json(review, upcoming, pending, bad, today, point_titles):
             "file": rec["_file"],
             "title": rec.get("_title", ""),
             "value": rec.get("value", ""),
-            "cause": rec.get("cause", ""),
+            "cause": rec.get("_cause") or rec.get("cause", ""),
             "norm": rec.get("norm", ""),
             "status": rec.get("status", ""),
             "chapter": rec.get("chapter", ""),
@@ -395,7 +407,8 @@ def render_json(review, upcoming, pending, bad, today, point_titles):
             "score": score(rec, today),
             "review_count": rec.get("review_count", ""),
             "point_ref": ref or "",
-            "point_title": point_titles.get(ref, "") if ref else "",
+            "point_title": (point_titles.get(ref, "") if ref else "") or rec.get("_title", ""),
+            "evidence_count": rec.get("_evidence", 0),
         }
     return json.dumps({
         "today": today.isoformat(),
@@ -430,7 +443,7 @@ def build_parser():
 def sanity_check(records):
     """next_review 早于考试日期几乎一定是录入笔误，报出来但不拦。"""
     for rec in records:
-        exam = parse_date(rec.get("date"))
+        exam = parse_date(rec.get("first_wrong") or rec.get("date"))
         if exam and rec["_due"] and rec["_due"] < exam:
             warn("SUSPECT %s: next_review (%s) is before the exam date (%s)"
                  % (rec["_file"], rec["_due"], exam))
@@ -458,8 +471,13 @@ def main(argv=None):
 
     subject = os.path.join(data_root, "data", "subjects", "生物")
     verbose("subject dir: %s" % subject)
-    point_titles = load_points(os.path.join(subject, "points"))
-    records = load_errors(os.path.join(subject, "errors"))
+    points_dir = os.path.join(subject, "points")
+    records = load_cards(points_dir)
+    if not records and os.path.isdir(os.path.join(subject, "errors")):
+        warn("points/ 里一张卡都没有，但旧 errors/ 还在：本工具只认 1.13 的"
+             "知识资产库，先把错题证据并进 points/<章>/KP-*.md")
+    point_titles = {rec.get("id") or rec["_file"]: rec.get("_title", "")
+                    for rec in records}
     sanity_check(records)
 
     review, upcoming, pending, bad = split_queues(records, today)
@@ -469,7 +487,8 @@ def main(argv=None):
     if args.json:
         out(render_json(review, upcoming, pending, bad, today, point_titles))
     else:
-        out(render_text(review, upcoming, pending, bad, today, args, point_titles))
+        out(render_text(review, upcoming, pending, bad, today, args, point_titles,
+                        len(records)))
     return EXIT_OK
 
 
